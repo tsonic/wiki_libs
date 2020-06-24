@@ -16,5 +16,18 @@ def process_title(s):
 def train_phraser(sentences, min_count=5):
     return Phraser(Phrases(sentences, min_count=min_count, delimiter=b'_'))
 
+def train_ngram(sentences, n=3):
+    ngram_model = []
+    for i in range(1, n):
+        xgram = train_phraser(sentences, min_count=5)
+        sentences = xgram[sentences]
+        ngram_model.append(xgram)
+    return ngram_model
+
+def transform_ngram(sentences, ngram_model):
+    for m in ngram_model:
+        sentences = m[sentences]
+    return sentences
+
 def is_ascii(s):
     return all(ord(c) < 128 for c in s)
