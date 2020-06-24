@@ -28,7 +28,7 @@ def train_ngram(sentences, n=3):
 def transform_ngram(sentences, ngram_model):
     for m in ngram_model:
         sentences = m[sentences]
-    return sentences
+    return list(sentences)
 
 def generate_vocab(sentences, min_count = 2):
     all_words = list(itertools.chain(*sentences))
