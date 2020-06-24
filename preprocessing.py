@@ -1,6 +1,7 @@
 import pandas as pd
 from zipfile import ZipFile
 from gensim.models.phrases import Phrases, Phraser
+import itertools
 
 def read_category_links():
     return read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', sep = ',')
@@ -28,6 +29,12 @@ def transform_ngram(sentences, ngram_model):
     for m in ngram_model:
         sentences = m[sentences]
     return sentences
+
+def generate_vocab(sentences, min_count = 2):
+    all_words = list(itertools.chain(*sentences))
+    df_all_words = pd.DataFrame.from_records([{'word':w, 'ngram':len(w.split(sep='_'))} for w in all_words])
+    vocab = df_all_words['word'].value_counts().to_frame('count').query('count>@min_count').index.tolist()
+    return vocab
 
 def is_ascii(s):
     return all(ord(c) < 128 for c in s)
