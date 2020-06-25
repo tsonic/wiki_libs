@@ -3,6 +3,7 @@ from zipfile import ZipFile
 from gensim.models.phrases import Phrases, Phraser
 import itertools
 
+
 def read_category_links():
     return read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', sep = ',')
 
