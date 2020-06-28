@@ -18,10 +18,10 @@ def process_title(s):
 def train_phraser(sentences, min_count=5):
     return Phraser(Phrases(sentences, min_count=min_count, delimiter=b'_'))
 
-def train_ngram(sentences, n=3):
+def train_ngram(sentences, n=3, min_count=5):
     ngram_model = []
     for i in range(1, n):
-        xgram = train_phraser(sentences, min_count=5)
+        xgram = train_phraser(sentences, min_count=min_count)
         sentences = xgram[sentences]
         ngram_model.append(xgram)
     return ngram_model
