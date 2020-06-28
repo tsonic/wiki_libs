@@ -2,7 +2,7 @@ import pandas as pd
 from zipfile import ZipFile
 from gensim.models.phrases import Phrases, Phraser
 import itertools
-
+import pickle
 
 def read_category_links():
     return read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', sep = ',')
@@ -18,12 +18,13 @@ def process_title(s):
 def train_phraser(sentences, min_count=5):
     return Phraser(Phrases(sentences, min_count=min_count, delimiter=b'_'))
 
-def train_ngram(sentences, n=3, min_count=5):
+def train_ngram(sentences, n=3, min_count=5, out_file='ngram_model.pickle'):
     ngram_model = []
     for i in range(1, n):
         xgram = train_phraser(sentences, min_count=min_count)
         sentences = xgram[sentences]
         ngram_model.append(xgram)
+    pickle.dump(ngram_model, open(out_file, "wb"))
     return ngram_model
 
 def transform_ngram(sentences, ngram_model):
