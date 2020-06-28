@@ -32,6 +32,9 @@ def transform_ngram(sentences, ngram_model):
         sentences = m[sentences]
     return list(sentences)
 
+def load_ngram_model(model_file):
+    return pickle.load(open(model_file, "rb"))
+
 def generate_vocab(sentences, min_count = 2):
     all_words = list(itertools.chain(*sentences))
     df_all_words = pd.DataFrame.from_records([{'word':w, 'ngram':len(w.split(sep='_'))} for w in all_words])
