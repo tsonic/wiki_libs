@@ -3,14 +3,26 @@ from zipfile import ZipFile
 from gensim.models.phrases import Phrases, Phraser
 import itertools
 import pickle
+import numpy as np
 
 def read_category_links():
-    return read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', sep = ',')
+    return next(read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', sep = ','))
 
-def read_zip_files(path, sep = ','):
+def read_link_pairs(n_chunk = 10):
+    print(f'reading link pairs in {n_chunk} chunks')
+    return read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip', 
+                            sep = ',', n_chunk = n_chunk)
+
+def read_zip_files(path, sep = ',', n_chunk = 1):
     zip_file = ZipFile(path)
-    return pd.concat([pd.read_csv(zip_file.open(z.filename), sep=sep) 
-                        for z in zip_file.infolist() if not z.is_dir()])
+    files = [z.filename for z in zip_file.infolist() if not z.is_dir()]
+    files.sort()
+    # if n_chunk <= 1:
+    #     return pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in files])
+    # else:
+    #     # return a generator if > 1 chunk
+    for f_list in np.array_split(files, n_chunk):
+        yield pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in f_list])
 
 def process_title(s):
   return s.lower().replace('(','').replace(')','').replace(',','').split(sep='_')
