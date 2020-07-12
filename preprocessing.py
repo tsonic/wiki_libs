@@ -4,25 +4,50 @@ from gensim.models.phrases import Phrases, Phraser
 import itertools
 import pickle
 import numpy as np
+import os
 
 def read_category_links():
-    return next(read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', sep = ','))
+    return next(read_files_in_chunks('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', 
+                sep = ',', compression = 'zip', n_chunk = 1))
 
-def read_link_pairs(n_chunk = 10):
+def read_link_pairs_chunks(n_chunk = 10):
     print(f'reading link pairs in {n_chunk} chunks')
-    return read_zip_files('gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip', 
-                            sep = ',', n_chunk = n_chunk)
+    return read_files_in_chunks('gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip', 
+                            sep = ',', n_chunk = n_chunk, compression = 'zip')
 
-def read_zip_files(path, sep = ',', n_chunk = 1):
-    zip_file = ZipFile(path)
-    files = [z.filename for z in zip_file.infolist() if not z.is_dir()]
-    files.sort()
-    # if n_chunk <= 1:
-    #     return pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in files])
-    # else:
-    #     # return a generator if > 1 chunk
-    for f_list in np.array_split(files, n_chunk):
-        yield pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in f_list])
+def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
+    if os.path.isdir(path):
+        base_files = [path+'/'+f for f in os.listdir(path) if not os.path.isdir(path+'/'+f)]
+    else:
+        base_files = [path]
+
+    base_files.sort()
+
+    file_handle_list = []
+    for f in base_files:
+        if compression is None:
+            file_handle_list.append(f)
+        elif compression == 'zip':
+            zf = ZipFile(f)
+            file_list_in_zip = [z.filename for z in zf.infolist() if not z.is_dir()]
+            file_list_in_zip.sort()
+            file_handle_list += [zf.open(z) for z in file_list_in_zip]
+        else:
+            raise Exception(f'Unkonwn compression type: {compression}')
+    
+    for file_handles in np.array_split(file_handle_list, n_chunk):
+        yield pd.concat([pd.read_csv(fh, sep=sep) for fh in file_handles])                   
+
+# def read_zip_files(path, sep = ',', n_chunk = 1):
+#     zip_file = ZipFile(path)
+#     files = [z.filename for z in zip_file.infolist() if not z.is_dir()]
+#     files.sort()
+#     # if n_chunk <= 1:
+#     #     return pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in files])
+#     # else:
+#     #     # return a generator if > 1 chunk
+#     for f_list in np.array_split(files, n_chunk):
+#         yield pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in f_list])
 
 def process_title(s):
   return s.lower().replace('(','').replace(')','').replace(',','').split(sep='_')
