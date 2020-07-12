@@ -7,13 +7,16 @@ import pickle
 import numpy as np
 import os
 
+CATEGORY_LINKS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip'
+LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip'
+
 def read_category_links():
-    return next(read_files_in_chunks('gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip', 
+    return next(read_files_in_chunks(CATEGORY_LINKS_LOCATION, 
                 sep = ',', compression = 'zip', n_chunk = 1))
 
 def read_link_pairs_chunks(n_chunk = 10):
     print(f'reading link pairs in {n_chunk} chunks')
-    return read_files_in_chunks('gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip', 
+    return read_files_in_chunks(LINK_PAIRS_LOCATION, 
                             sep = ',', n_chunk = n_chunk, compression = 'zip')
 
 def get_file_handles_in_zip(f):
@@ -29,7 +32,7 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
         if isinstance(path[0], zipfile.ZipExtFile):
             file_handle_list = path
         else:
-            raise Exception('only support when path is a list of ZipExtFile (opened file handle)')
+            raise Exception('only support when path is a list of ZipExtFile (opened zipped file handle)')
 
     elif isinstance(path, str):
         if os.path.isdir(path):
