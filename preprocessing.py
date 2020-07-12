@@ -1,5 +1,6 @@
 import pandas as pd
 from zipfile import ZipFile
+import zipfile
 from gensim.models.phrases import Phrases, Phraser
 import itertools
 import pickle
@@ -15,25 +16,37 @@ def read_link_pairs_chunks(n_chunk = 10):
     return read_files_in_chunks('gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip', 
                             sep = ',', n_chunk = n_chunk, compression = 'zip')
 
+def get_file_handles_in_zip(f):
+    zf = ZipFile(f)
+    file_list_in_zip = [z.filename for z in zf.infolist() if not z.is_dir()]
+    file_list_in_zip.sort()
+    return [zf.open(f) for f in file_list_in_zip]
+
 def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
-    if os.path.isdir(path):
-        base_files = [path+'/'+f for f in os.listdir(path) if not os.path.isdir(path+'/'+f)]
-    else:
-        base_files = [path]
-
-    base_files.sort()
-
-    file_handle_list = []
-    for f in base_files:
-        if compression is None:
-            file_handle_list.append(f)
-        elif compression == 'zip':
-            zf = ZipFile(f)
-            file_list_in_zip = [z.filename for z in zf.infolist() if not z.is_dir()]
-            file_list_in_zip.sort()
-            file_handle_list += [zf.open(z) for z in file_list_in_zip]
+    if isinstance(path, list):
+        if len(path) == 0:
+            return None
+        if isinstance(path[0], zipfile.ZipExtFile):
+            file_handle_list = path
         else:
-            raise Exception(f'Unkonwn compression type: {compression}')
+            raise Exception('only support when path is a list of ZipExtFile (opened file handle)')
+
+    elif isinstance(path, str):
+        if os.path.isdir(path):
+            base_files = [path+'/'+f for f in os.listdir(path) if not os.path.isdir(path+'/'+f)]
+        else:
+            base_files = [path]
+
+        base_files.sort()
+
+        file_handle_list = []
+        for f in base_files:
+            if compression is None:
+                file_handle_list.append(f)
+            elif compression == 'zip':
+                file_handle_list += get_file_handles_in_zip(f)
+            else:
+                raise Exception(f'Unkonwn compression type: {compression}')
     
     for file_handles in np.array_split(file_handle_list, n_chunk):
         yield pd.concat([pd.read_csv(fh, sep=sep) for fh in file_handles])                   
