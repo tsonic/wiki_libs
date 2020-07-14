@@ -9,6 +9,7 @@ import os
 
 CATEGORY_LINKS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip'
 LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip'
+NGRAM_MODEL_PATH_PREFIX = "gdrive/My Drive/Projects with Wei/wiki_data/ngram_model/"
 
 def read_category_links():
     return next(read_files_in_chunks(CATEGORY_LINKS_LOCATION, 
@@ -84,6 +85,14 @@ def transform_ngram(sentences, ngram_model):
     for m in ngram_model:
         sentences = m[sentences]
     return list(sentences)
+
+def get_transformed_title_category(ngram_model):
+    df_cp = read_category_links()
+    titles = df_cp['page_title'].dropna().drop_duplicates().apply(process_title).tolist()
+    categories = df_cp['page_category'].dropna().drop_duplicates().apply(process_title).tolist()
+    title_transformed = transform_ngram(titles, ngram_model)
+    category_transformed = transform_ngram(categories, ngram_model)
+    return title_transformed, category_transformed
 
 def load_ngram_model(model_file):
     return pickle.load(open(model_file, "rb"))
