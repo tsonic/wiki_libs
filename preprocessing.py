@@ -6,6 +6,7 @@ import itertools
 import pickle
 import numpy as np
 import os
+from tqdm import tqdm
 
 CATEGORY_LINKS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip'
 LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip'
@@ -52,7 +53,7 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
             else:
                 raise Exception(f'Unkonwn compression type: {compression}')
     
-    for file_handles in np.array_split(file_handle_list, n_chunk):
+    for file_handles in tqdm(np.array_split(file_handle_list, n_chunk)):
         yield pd.concat([pd.read_csv(fh, sep=sep) for fh in file_handles])                   
 
 # def read_zip_files(path, sep = ',', n_chunk = 1):
