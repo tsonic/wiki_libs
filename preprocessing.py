@@ -28,6 +28,7 @@ def get_file_handles_in_zip(f):
     return [zf.open(f) for f in file_list_in_zip]
 
 def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
+    file_handle_list = None
     if isinstance(path, list):
         if len(path) == 0:
             return None
