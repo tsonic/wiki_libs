@@ -29,7 +29,7 @@ def get_file_handles_in_zip(f):
 
 def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
     file_handle_list = None
-    if isinstance(path, list):
+    if isinstance(path, list) or isinstance(path, np.ndarray):
         if len(path) == 0:
             return None
         if isinstance(path[0], zipfile.ZipExtFile):
@@ -53,6 +53,8 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
                 file_handle_list += get_file_handles_in_zip(f)
             else:
                 raise Exception(f'Unkonwn compression type: {compression}')
+    else:
+        raise Exception("type %s for path is not supported!" % type(path))
     
     for file_handles in tqdm(np.array_split(file_handle_list, n_chunk)):
         yield pd.concat([pd.read_csv(fh, sep=sep) for fh in file_handles])                   
