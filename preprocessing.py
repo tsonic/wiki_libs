@@ -14,7 +14,7 @@ NGRAM_MODEL_PATH_PREFIX = "gdrive/My Drive/Projects with Wei/wiki_data/ngram_mod
 
 def read_category_links():
     return next(read_files_in_chunks(CATEGORY_LINKS_LOCATION, 
-                sep = ',', compression = 'zip', n_chunk = 1))
+                sep = ',', compression = 'zip', n_chunk = 1, progress_bar=False))
 
 def read_link_pairs_chunks(n_chunk = 10):
     print(f'reading link pairs in {n_chunk} chunks')
