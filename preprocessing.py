@@ -27,7 +27,7 @@ def get_file_handles_in_zip(f):
     file_list_in_zip.sort()
     return [zf.open(f) for f in file_list_in_zip]
 
-def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
+def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, progress_bar = True):
     file_handle_list = None
     if isinstance(path, list) or isinstance(path, np.ndarray):
         if len(path) == 0:
@@ -56,7 +56,11 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10):
     else:
         raise Exception("type %s for path is not supported!" % type(path))
     
-    for file_handles in tqdm(np.array_split(file_handle_list, n_chunk)):
+    
+    chunks = np.array_split(file_handle_list, n_chunk)
+    if progress_bar:
+        chunks = tqdm(chunks)
+    for file_handles in chunks:
         yield pd.concat([pd.read_csv(fh, sep=sep) for fh in file_handles])                   
 
 # def read_zip_files(path, sep = ',', n_chunk = 1):
