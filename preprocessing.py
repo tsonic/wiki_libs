@@ -9,7 +9,7 @@ import os
 from tqdm import tqdm
 
 CATEGORY_LINKS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip'
-LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs.zip'
+LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_shuffled.zip'
 NGRAM_MODEL_PATH_PREFIX = "gdrive/My Drive/Projects with Wei/wiki_data/ngram_model/"
 
 def read_category_links():
