@@ -61,7 +61,11 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
     if progress_bar:
         chunks = tqdm(chunks)
     for file_handles in chunks:
-        yield pd.concat([pd.read_csv(fh, sep=sep) for fh in file_handles])                   
+        df_list = []
+        for fh in file_handles:
+            df_list.append(pd.read_csv(fh, sep=sep))
+            fh.close()
+        yield pd.concat(df_list)
 
 # def read_zip_files(path, sep = ',', n_chunk = 1):
 #     zip_file = ZipFile(path)
