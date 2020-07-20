@@ -64,7 +64,8 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
         df_list = []
         for fh in file_handles:
             df_list.append(pd.read_csv(fh, sep=sep))
-            fh.close()
+            if isinstance(path[0], zipfile.ZipExtFile):
+                fh.close()
         yield pd.concat(df_list)
 
 # def read_zip_files(path, sep = ',', n_chunk = 1):
