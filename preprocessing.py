@@ -35,10 +35,10 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
     if isinstance(path, list) or isinstance(path, np.ndarray):
         if len(path) == 0:
             return None
-        if isinstance(path[0], zipfile.ZipExtFile):
+        if isinstance(path[0], zipfile.ZipExtFile) or isinstance(path[0], str):
             file_handle_list = path
         else:
-            raise Exception('only support when path is a list of ZipExtFile (opened zipped file handle)')
+            raise Exception('only support when path is a list of ZipExtFile (opened zipped file handle) or strings')
 
     elif isinstance(path, str):
         if os.path.isdir(path):
