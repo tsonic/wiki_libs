@@ -27,6 +27,9 @@ def get_file_handles_in_zip(f):
     file_list_in_zip.sort()
     return [zf.open(f) for f in file_list_in_zip]
 
+def get_files_in_dir(path):
+    return [path+'/'+f for f in os.listdir(path) if not os.path.isdir(path+'/'+f)]
+
 def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, progress_bar = True):
     file_handle_list = None
     if isinstance(path, list) or isinstance(path, np.ndarray):
@@ -39,7 +42,7 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
 
     elif isinstance(path, str):
         if os.path.isdir(path):
-            base_files = [path+'/'+f for f in os.listdir(path) if not os.path.isdir(path+'/'+f)]
+            base_files = get_files_in_dir(path)
         else:
             base_files = [path]
 
