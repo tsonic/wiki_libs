@@ -29,7 +29,7 @@ def read_link_pairs_chunks(n_chunk = 10, w2v_mimic = False):
         path = LINK_PAIRS_LOCATION
     print(f'reading link pairs in {n_chunk} chunks')
     return read_files_in_chunks(path, 
-                            sep = ',', n_chunk = n_chunk, compression = 'zip')
+                            sep = ',', n_chunk = n_chunk, compression = None)
 
 def get_file_handles_in_zip(f):
     zf = ZipFile(f)
