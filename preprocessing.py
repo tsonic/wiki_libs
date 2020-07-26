@@ -9,16 +9,26 @@ import os
 from tqdm import tqdm
 
 CATEGORY_LINKS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip'
+CATEGORY_LINKS_W2V_MIMIC_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged_w2v_mimic.zip'
 LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_shuffled_gz/'
+LINK_PAIRS_W2V_MIMIC_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_shuffled_w2v_mimic_gz/'
 NGRAM_MODEL_PATH_PREFIX = "gdrive/My Drive/Projects with Wei/wiki_data/ngram_model/"
 
-def read_category_links():
-    return next(read_files_in_chunks(CATEGORY_LINKS_LOCATION, 
+def read_category_links(w2v_minic = False):
+    if w2v_minic:
+        path = CATEGORY_LINKS_W2V_MIMIC_LOCATION
+    else:
+        path = CATEGORY_LINKS_LOCATION
+    return next(read_files_in_chunks(path, 
                 sep = ',', compression = 'zip', n_chunk = 1, progress_bar=False))
 
-def read_link_pairs_chunks(n_chunk = 10):
+def read_link_pairs_chunks(n_chunk = 10, w2v_minic = False):
+    if w2v_minic:
+        path = LINK_PAIRS_W2V_MIMIC_LOCATION
+    else:
+        path = LINK_PAIRS_LOCATION
     print(f'reading link pairs in {n_chunk} chunks')
-    return read_files_in_chunks(LINK_PAIRS_LOCATION, 
+    return read_files_in_chunks(path, 
                             sep = ',', n_chunk = n_chunk, compression = 'zip')
 
 def get_file_handles_in_zip(f):
