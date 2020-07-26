@@ -40,7 +40,7 @@ def get_file_handles_in_zip(f):
 def get_files_in_dir(path):
     return [path+'/'+f for f in os.listdir(path) if not os.path.isdir(path+'/'+f)]
 
-def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, progress_bar = True):
+def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, progress_bar = True, shuffle = False):
     file_handle_list = None
     if isinstance(path, list) or isinstance(path, np.ndarray):
         if len(path) == 0:
@@ -69,7 +69,8 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
     else:
         raise Exception("type %s for path is not supported!" % type(path))
     
-    
+    if shuffle:
+        np.random.shuffle(file_handle_list)
     chunks = np.array_split(file_handle_list, n_chunk)
     if progress_bar:
         chunks = tqdm(chunks)
