@@ -131,3 +131,8 @@ def generate_vocab(sentences, min_count = 2):
 
 def is_ascii(s):
     return all(ord(c) < 128 for c in s)
+
+def convert_to_w2v_mimic_path(path):
+    path_segs = path.split('.')
+    path_segs[-1] = '_w2v_mimic' + path_segs[-1]
+    return '.'.join(path_segs)
