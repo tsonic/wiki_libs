@@ -14,16 +14,16 @@ LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_sh
 LINK_PAIRS_W2V_MIMIC_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_shuffled_w2v_mimic_gz/'
 NGRAM_MODEL_PATH_PREFIX = "gdrive/My Drive/Projects with Wei/wiki_data/ngram_model/"
 
-def read_category_links(w2v_minic = False):
-    if w2v_minic:
+def read_category_links(w2v_mimic = False):
+    if w2v_mimic:
         path = CATEGORY_LINKS_W2V_MIMIC_LOCATION
     else:
         path = CATEGORY_LINKS_LOCATION
     return next(read_files_in_chunks(path, 
                 sep = ',', compression = 'zip', n_chunk = 1, progress_bar=False))
 
-def read_link_pairs_chunks(n_chunk = 10, w2v_minic = False):
-    if w2v_minic:
+def read_link_pairs_chunks(n_chunk = 10, w2v_mimic = False):
+    if w2v_mimic:
         path = LINK_PAIRS_W2V_MIMIC_LOCATION
     else:
         path = LINK_PAIRS_LOCATION
