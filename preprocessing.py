@@ -68,7 +68,7 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
                 raise Exception(f'Unkonwn compression type: {compression}')
     else:
         raise Exception("type %s for path is not supported!" % type(path))
-    
+
     if shuffle:
         np.random.shuffle(file_handle_list)
     chunks = np.array_split(file_handle_list, n_chunk)
@@ -140,3 +140,12 @@ def convert_to_w2v_mimic_path(path):
     else:
         path_segs[-1] += '_w2v_mimic'
     return '.'.join(path_segs)
+
+
+def normalize(a):
+    ndim = a.ndim
+    denom = np.sqrt((a ** 2).sum(axis=ndim-1))
+    if ndim > 1:
+        # expand to a new axis
+        denom = denom[:,np.newaxis]
+    return a / denom
