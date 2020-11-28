@@ -8,9 +8,10 @@ import numpy as np
 import os
 from tqdm import tqdm
 
+import sys
+IN_COLAB = 'google.colab' in sys.modules
 
-
-if 'google.colab' in str(get_ipython()):
+if IN_COLAB:
     PATH_PREFIX = 'gdrive/My Drive/Projects with Wei/'
 else:
     PATH_PREFIX = './'
