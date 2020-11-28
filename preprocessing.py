@@ -8,11 +8,18 @@ import numpy as np
 import os
 from tqdm import tqdm
 
-CATEGORY_LINKS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged.zip'
-CATEGORY_LINKS_W2V_MIMIC_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/categorylinks_page_merged_w2v_mimic.zip'
-LINK_PAIRS_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_shuffled_gz/'
-LINK_PAIRS_W2V_MIMIC_LOCATION = 'gdrive/My Drive/Projects with Wei/wiki_data/link_pairs_shuffled_w2v_mimic_gz/'
-NGRAM_MODEL_PATH_PREFIX = "gdrive/My Drive/Projects with Wei/wiki_data/ngram_model/"
+
+
+if 'google.colab' in str(get_ipython()):
+    PATH_PREFIX = 'gdrive/My Drive/Projects with Wei/'
+else:
+    PATH_PREFIX = './'
+
+CATEGORY_LINKS_LOCATION = PATH_PREFIX + 'wiki_data/categorylinks_page_merged.zip'
+CATEGORY_LINKS_W2V_MIMIC_LOCATION = PATH_PREFIX + 'wiki_data/categorylinks_page_merged_w2v_mimic.zip'
+LINK_PAIRS_LOCATION = PATH_PREFIX + 'wiki_data/link_pairs_shuffled_gz/'
+LINK_PAIRS_W2V_MIMIC_LOCATION = PATH_PREFIX + 'wiki_data/link_pairs_shuffled_w2v_mimic_gz/'
+NGRAM_MODEL_PATH_PREFIX = PATH_PREFIX + "wiki_data/ngram_model/"
 
 def read_category_links(w2v_mimic = False):
     if w2v_mimic:
