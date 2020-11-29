@@ -9,9 +9,11 @@ import os
 from tqdm import tqdm
 
 import sys
-IN_COLAB = 'google.colab' in sys.modules
 
-if IN_COLAB:
+def is_colab():
+    return 'google.colab' in sys.modules
+
+if is_colab():
     PATH_PREFIX = 'gdrive/My Drive/Projects with Wei/'
 else:
     PATH_PREFIX = './'
