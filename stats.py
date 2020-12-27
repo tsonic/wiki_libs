@@ -40,6 +40,7 @@ class PageWordStats(object):
                     .sum()
                 .reset_index()
             )
+            # page_frequency is the page_id to page count mapping.
             self.page_frequency = {row.page_id: row.count 
                                    for row in df_stats.itertuples(index = False)}
             # page2id is 'page_id' to pytorch embedding index mapping
@@ -52,6 +53,7 @@ class PageWordStats(object):
 
             ngram_model = load_ngram_model(NGRAM_MODEL_PATH_PREFIX + ngram_model_file)
             if w2v_mimic:
+                print('Each word is a "page" in w2v_mimic mode. Refer to page count as the actual word count, and discard the word count output below. ')
                 s_words = pd.Series(['dummy']).value_counts()
             else:
                 title_transformed, category_transformed = get_transformed_title_category(ngram_model)

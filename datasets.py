@@ -110,7 +110,6 @@ class WikiDataset(torch.utils.data.IterableDataset):
 
     @staticmethod
     def worker_init_fn(worker_id, file_handle_lists):
-        print('worker_init')
         worker_info = torch.utils.data.get_worker_info()
         dataset = worker_info.dataset  # the dataset copy in this worker process
         worker_id = worker_info.id

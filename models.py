@@ -57,7 +57,7 @@ class OneTower(nn.Module):
 
 class two_tower(nn.Module):
     def __init__(self, vocab_size, embedding_dim, context_size, hidden_dim1, out_dim):
-        super(nn.Module, self).__init__()
+        super(two_tower, self).__init__()
         self.embeddings = nn.Embedding(vocab_size, embedding_dim)
         self.linear1 = nn.Linear(context_size * embedding_dim, hidden_dim1)
         self.linear2 = nn.Linear(hidden_dim1, out_dim)

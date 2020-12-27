@@ -166,8 +166,6 @@ class WikiTrainer:
 
     def do_save_embedding(self, path):
         print('Saving embeddings...', flush=True)
-        # user_embeddings = self.model.user_embeddings.weight.cpu().data.numpy()
-        # item_embeddings = self.model.item_embeddings.weight.cpu().data.numpy()
 
         torch.save({
             'model_state_dict': self.model.state_dict(),
@@ -175,11 +173,6 @@ class WikiTrainer:
             'user_embeddings':self.model.input_embeddings.weight.cpu().data.numpy(),
             'item_embeddings':self.model.item_embeddings.weight.cpu().data.numpy(),
             }, path)
-        # np.savez_compressed(path, 
-        #                     user_embeddings=user_embeddings, 
-        #                     item_embeddings=item_embeddings,
-        #                     )
-
 
 class MultipleOptimizer:
     def __init__(self, *op):
