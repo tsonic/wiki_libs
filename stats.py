@@ -1,7 +1,7 @@
-from .preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks
+from wiki_libs.preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks
 import pandas as pd
 import json
-from .ngram import load_ngram_model, NGRAM_MODEL_PATH_PREFIX, get_transformed_title_category
+from wiki_libs.ngram import load_ngram_model, NGRAM_MODEL_PATH_PREFIX, get_transformed_title_category
 import itertools
 
 

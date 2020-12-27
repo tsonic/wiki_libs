@@ -1,8 +1,8 @@
-
 import torch
 import pandas as pd
-from .preprocessing import read_files_in_chunks
+from wiki_libs.preprocessing import read_files_in_chunks
 import numpy as np
+
 
 NEGATIVE_TABLE_SIZE = 1e8
 class WikiDataset(torch.utils.data.IterableDataset):
@@ -106,11 +106,11 @@ class WikiDataset(torch.utils.data.IterableDataset):
     def collate(self,batches):
         negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
         id_list, positive_list = zip(*batches)
-
         return torch.LongTensor(id_list), torch.LongTensor(positive_list), torch.from_numpy(negs)
 
     @staticmethod
     def worker_init_fn(worker_id, file_handle_lists):
+        print('worker_init')
         worker_info = torch.utils.data.get_worker_info()
         dataset = worker_info.dataset  # the dataset copy in this worker process
         worker_id = worker_info.id
