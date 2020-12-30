@@ -1,9 +1,9 @@
 import pickle
 from gensim.models.phrases import Phrases, Phraser
-from wiki_libs.preprocessing import read_category_links, process_title, PATH_PREFIX
+from wiki_libs.preprocessing import read_category_links, process_title, path_decoration
 
 
-NGRAM_MODEL_PATH_PREFIX = PATH_PREFIX + "wiki_data/ngram_model/"
+NGRAM_MODEL_PATH_PREFIX = "wiki_data/ngram_model"
 def train_phraser(sentences, min_count=5):
     return Phraser(Phrases(sentences, min_count=min_count, delimiter=b'_'))
 

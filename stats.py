@@ -1,4 +1,4 @@
-from wiki_libs.preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks
+from wiki_libs.preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks, path_decoration
 import pandas as pd
 import json
 from wiki_libs.ngram import load_ngram_model, NGRAM_MODEL_PATH_PREFIX, get_transformed_title_category
@@ -8,15 +8,14 @@ import itertools
 class PageWordStats(object):
     def __init__(self, read_path,
                  ngram_model_file = "title_category_ngram_model.pickle",
-                 output_path = "gdrive/My Drive/Projects with Wei/wiki_data/page_word_stats.json",
+                 output_path = "wiki_data/page_word_stats.json",
                  n_chunk = 10,
                  w2v_mimic = False,
                  json_str = None,
                  ):
 
         if read_path is not None:
-            if w2v_mimic:
-                read_path = convert_to_w2v_mimic_path(read_path)
+            read_path = path_decoration(read_path, w2v_mimic)
             with open(read_path, 'r') as f:
                 config = json.load(f)
                 self.from_json(config)
@@ -43,15 +42,11 @@ class PageWordStats(object):
             # page_frequency is the page_id to page count mapping.
             self.page_frequency = {row.page_id: row.count 
                                    for row in df_stats.itertuples(index = False)}
-            # page2id is 'page_id' to pytorch embedding index mapping
-            self.page2id = {p:i for i, p in enumerate(df_stats['page_id'])}
-            # id2page maps pytorch embedding back to 'page_id'
-            self.id2page = df_stats['page_id'].tolist()
 
             # recompute the word stats
             print('generating word/ngram stats from title and categories...')
 
-            ngram_model = load_ngram_model(NGRAM_MODEL_PATH_PREFIX + ngram_model_file)
+            ngram_model = load_ngram_model(path_decoration(NGRAM_MODEL_PATH_PREFIX, False) + '/' + ngram_model_file)
             if w2v_mimic:
                 print('Each word is a "page" in w2v_mimic mode. Refer to page count as the actual word count, and discard the word count output below. ')
                 s_words = pd.Series(['dummy']).value_counts()
@@ -61,32 +56,21 @@ class PageWordStats(object):
                     pd.Series(itertools.chain(*(title_transformed + category_transformed)))
                     .value_counts()
                 )
-            # word_frequency is a list, where ith element is the word frequency of word with id i.
-            self.word_frequency = s_words.tolist()
-            self.word2id = {w:i for i, w in enumerate(s_words.index)}
-            self.id2word = s_words.index.tolist()
-            if w2v_mimic:
-                output_path = convert_to_w2v_mimic_path(output_path)
+            # word_frequency is a list, where ith element is the word frequency of word with embedding id i.
+            self.word_frequency = {i:w for i, w in enumerate(s_words.tolist())}
+
+            output_path = path_decoration(output_path, w2v_mimic)
             with open(output_path, 'w') as f:
                 f.write(self.to_json_str())
-        print('There are %d unique words/ngrams' % len(self.word2id))
-        print('There are %d unique pages' % len(self.page2id))
+        print('There are %d unique words/ngrams' % len(self.word_frequency))
+        print('There are %d unique pages' % len(self.page_frequency))
     
     def from_json(self, config):
-        self.word_frequency = config['word_frequency']
-        self.word2id = config['word2id']
-        self.id2word = config['id2word']
+        self.word_frequency = {int(k):v for k, v in config['word_frequency'].items()}
         self.page_frequency = {int(k):v for k, v in config['page_frequency'].items()}
-
-        self.page2id = {int(k):v for k, v in config['page2id'].items()}
-        self.id2page = config['id2page']
 
     def to_json_str(self):   
         return json.dumps({
             'word_frequency': self.word_frequency,
-            'word2id': self.word2id,
-            'id2word':self.id2word,
             'page_frequency': self.page_frequency,
-            'page2id': self.page2id,
-            'id2page': self.id2page,
         })

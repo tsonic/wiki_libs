@@ -1,23 +1,23 @@
 import torch
-from wiki_libs.preprocessing import normalize
+from wiki_libs.preprocessing import normalize, path_decoration
 from sklearn.neighbors import KDTree
 import pandas as pd
 import json
 import numpy as np
 
-def build_knn(emb_file, df_cp, use_user_emb = True):
-    saved_embeddings = torch.load('./wiki_data/wiki_embedding/embedding_w2v_mimic.npz')
+def build_knn(emb_file, df_cp, w2v_mimic, use_user_emb = True):
+    emb_file = path_decoration(emb_file, w2v_mimic = w2v_mimic)
+    saved_embeddings = torch.load(emb_file, map_location = 'cpu')
     USER_ID = 'page_id'
     ITEM_ID = 'page_id'
-    EMBEDDING_ID_TO_USER_ID = 'id2page'
     
     df_embedding = (
-    pd.DataFrame({
+        pd.DataFrame({
             'user_embedding':list(saved_embeddings['user_embeddings']), 
             'user_embedding_normalized':list(normalize(saved_embeddings['user_embeddings'])), 
             'item_embedding':list(saved_embeddings['item_embeddings']), 
             'item_embedding_normalized':list(normalize(saved_embeddings['item_embeddings'])), 
-            }, index = json.loads(str(saved_embeddings['page_word_stats_str']))[EMBEDDING_ID_TO_USER_ID])
+            }, index = json.loads(str(saved_embeddings['emb2page'])))
         .merge(
             df_cp.drop_duplicates('page_id')
                 .dropna(subset=['page_title'])

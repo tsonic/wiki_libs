@@ -13,30 +13,17 @@ import sys
 def is_colab():
     return 'google.colab' in sys.modules
 
-if is_colab():
-    PATH_PREFIX = 'gdrive/My Drive/Projects with Wei/'
-else:
-    PATH_PREFIX = './'
+CATEGORY_LINKS_LOCATION = 'wiki_data/categorylinks_page_merged.zip'
+LINK_PAIRS_LOCATION = 'wiki_data/link_pairs_shuffled_gz'
 
-CATEGORY_LINKS_LOCATION = PATH_PREFIX + 'wiki_data/categorylinks_page_merged.zip'
-CATEGORY_LINKS_W2V_MIMIC_LOCATION = PATH_PREFIX + 'wiki_data/categorylinks_page_merged_w2v_mimic.zip'
-LINK_PAIRS_LOCATION = PATH_PREFIX + 'wiki_data/link_pairs_shuffled_gz/'
-LINK_PAIRS_W2V_MIMIC_LOCATION = PATH_PREFIX + 'wiki_data/link_pairs_shuffled_w2v_mimic_gz/'
-NGRAM_MODEL_PATH_PREFIX = PATH_PREFIX + "wiki_data/ngram_model/"
 
 def read_category_links(w2v_mimic = False):
-    if w2v_mimic:
-        path = CATEGORY_LINKS_W2V_MIMIC_LOCATION
-    else:
-        path = CATEGORY_LINKS_LOCATION
+    path = path_decoration(CATEGORY_LINKS_LOCATION, w2v_mimic)
     return next(read_files_in_chunks(path, 
                 sep = ',', compression = 'zip', n_chunk = 1, progress_bar=False))
 
 def read_link_pairs_chunks(n_chunk = 10, w2v_mimic = False):
-    if w2v_mimic:
-        path = LINK_PAIRS_W2V_MIMIC_LOCATION
-    else:
-        path = LINK_PAIRS_LOCATION
+    path = path_decoration(LINK_PAIRS_LOCATION, w2v_mimic)
     print(f'reading link pairs in {n_chunk} chunks')
     return read_files_in_chunks(path, 
                             sep = ',', n_chunk = n_chunk, compression = None)
@@ -92,47 +79,9 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
                 fh.close()
         yield pd.concat(df_list)
 
-# def read_zip_files(path, sep = ',', n_chunk = 1):
-#     zip_file = ZipFile(path)
-#     files = [z.filename for z in zip_file.infolist() if not z.is_dir()]
-#     files.sort()
-#     # if n_chunk <= 1:
-#     #     return pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in files])
-#     # else:
-#     #     # return a generator if > 1 chunk
-#     for f_list in np.array_split(files, n_chunk):
-#         yield pd.concat([pd.read_csv(zip_file.open(f), sep=sep) for f in f_list])
 
 def process_title(s):
   return s.lower().replace('(','').replace(')','').replace(',','').split(sep='_')
-
-def train_phraser(sentences, min_count=5):
-    return Phraser(Phrases(sentences, min_count=min_count, delimiter=b'_'))
-
-def train_ngram(sentences, n=3, min_count=5, out_file='ngram_model.pickle'):
-    ngram_model = []
-    for i in range(1, n):
-        xgram = train_phraser(sentences, min_count=min_count)
-        sentences = xgram[sentences]
-        ngram_model.append(xgram)
-    pickle.dump(ngram_model, open(out_file, "wb"))
-    return ngram_model
-
-def transform_ngram(sentences, ngram_model):
-    for m in ngram_model:
-        sentences = m[sentences]
-    return list(sentences)
-
-def get_transformed_title_category(ngram_model):
-    df_cp = read_category_links()
-    titles = df_cp['page_title'].dropna().drop_duplicates().apply(process_title).tolist()
-    categories = df_cp['page_category'].dropna().drop_duplicates().apply(process_title).tolist()
-    title_transformed = transform_ngram(titles, ngram_model)
-    category_transformed = transform_ngram(categories, ngram_model)
-    return title_transformed, category_transformed
-
-def load_ngram_model(model_file):
-    return pickle.load(open(model_file, "rb"))
 
 def generate_vocab(sentences, min_count = 2):
     all_words = list(itertools.chain(*sentences))
@@ -145,12 +94,23 @@ def is_ascii(s):
 
 def convert_to_w2v_mimic_path(path):
     path_segs = path.split('.')
-    if len(path_segs) > 1:
-        path_segs[-2] += '_w2v_mimic'
-    else:
+    if len(path_segs) == 1 \
+        or (len(path_segs) == 2 and path[:2] == './'):  #
         path_segs[-1] += '_w2v_mimic'
+    else:
+        path_segs[-2] += '_w2v_mimic'
     return '.'.join(path_segs)
 
+def path_decoration(path, w2v_mimic):
+
+    if is_colab():
+        prefix = 'gdrive/My Drive/Projects with Wei/'
+    else:
+        prefix = './'
+    path = prefix + path
+    if w2v_mimic:
+        path = convert_to_w2v_mimic_path(path)
+    return path
 
 def normalize(a):
     ndim = a.ndim

@@ -4,7 +4,7 @@ from wiki_libs.stats import PageWordStats
 from wiki_libs.datasets import WikiDataset
 from wiki_libs.models import OneTower
 import torch.optim as optim
-from wiki_libs.preprocessing import convert_to_w2v_mimic_path, get_files_in_dir, LINK_PAIRS_LOCATION, LINK_PAIRS_W2V_MIMIC_LOCATION, is_colab
+from wiki_libs.preprocessing import convert_to_w2v_mimic_path, get_files_in_dir, path_decoration, LINK_PAIRS_LOCATION
 from torch.utils.data import DataLoader
 from functools import partial
 import numpy as np
@@ -13,7 +13,7 @@ import numpy as np
 class WikiTrainer:
 
     def __init__(self, hidden_dim1, item_embedding_dim, use_cuda, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
-                 initial_lr=0.001, min_count=12, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
+                 initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
                  sparse=False, single_layer=False, test=False, save_embedding=True, w2v_mimic=False, num_negs=5):
         
@@ -21,11 +21,13 @@ class WikiTrainer:
         if self.w2v_mimic:
             print('Using w2v mimic files for training...', flush=True)
 
-        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=w2v_mimic)
+        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic)
 
         self.timeout = timeout
         self.test = test
         self.num_workers = num_workers
+        self.page_min_count = page_min_count
+        self.word_min_count = word_min_count
         if test:
             self.num_workers = 0
             n_chunk = 1
@@ -33,14 +35,14 @@ class WikiTrainer:
         # Initialize dataset, file_list set to None for now. Will update later.
         self.dataset = WikiDataset(file_list = None, compression = 'zip', n_chunk = n_chunk, 
                               page_word_stats = page_word_stats, num_negs=num_negs, 
-                              ns_exponent=ns_exponent)
+                              ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count)
         if collate_fn == 'custom':
             self.collate_fn = self.dataset.collate
         else:
             self.collate_fn = None
 
         # self.output_file_name = output_file
-        self.corpus_size = len(self.dataset.page_frequency)
+        self.corpus_size = len(self.dataset.page_frequency_over_threshold)
         self.input_embedding_dim = input_embedding_dim
         self.save_embedding = save_embedding
         self.iprint = iprint
@@ -106,10 +108,8 @@ class WikiTrainer:
             
 
             # Initialize file handle list
-            if self.w2v_mimic:
-                file_handle_lists = get_files_in_dir(LINK_PAIRS_W2V_MIMIC_LOCATION)
-            else:
-                file_handle_lists = get_files_in_dir(LINK_PAIRS_LOCATION)
+
+            file_handle_lists = get_files_in_dir(path_decoration(LINK_PAIRS_LOCATION, self.w2v_mimic))
             if self.test:
                 file_handle_lists = file_handle_lists[:2]
 
@@ -155,13 +155,7 @@ class WikiTrainer:
 
         #self.skip_gram_model.save_embedding(self.data.id2word, self.output_file_name)
         if self.save_embedding:
-            if is_colab():
-                prefix = 'gdrive/My Drive/Projects with Wei/'
-            else:
-                prefix = './'
-            path = prefix + 'wiki_data/wiki_embedding/embedding.npz'
-            if self.w2v_mimic:
-                path = convert_to_w2v_mimic_path(path)
+            path = path_decoration('wiki_data/wiki_embedding/embedding.npz', self.w2v_mimic)
             self.do_save_embedding(path)
 
     def do_save_embedding(self, path):
@@ -169,7 +163,7 @@ class WikiTrainer:
 
         torch.save({
             'model_state_dict': self.model.state_dict(),
-            'page_word_stats_str': self.dataset.page_word_stats.to_json_str(),
+            'emb2page':self.dataset.emb2page,
             'user_embeddings':self.model.input_embeddings.weight.cpu().data.numpy(),
             'item_embeddings':self.model.item_embeddings.weight.cpu().data.numpy(),
             }, path)
