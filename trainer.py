@@ -15,7 +15,7 @@ class WikiTrainer:
     def __init__(self, hidden_dim1, item_embedding_dim, use_cuda, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
-                 sparse=False, single_layer=False, test=False, save_embedding=True, w2v_mimic=False, num_negs=5):
+                 sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5):
         
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:
@@ -45,6 +45,7 @@ class WikiTrainer:
         self.corpus_size = len(self.dataset.page_frequency_over_threshold)
         self.input_embedding_dim = input_embedding_dim
         self.save_embedding = save_embedding
+        self.save_item_embedding = save_item_embedding
         self.iprint = iprint
         self.batch_size = batch_size
         self.iterations = iterations
@@ -156,9 +157,9 @@ class WikiTrainer:
         #self.skip_gram_model.save_embedding(self.data.id2word, self.output_file_name)
         if self.save_embedding:
             path = path_decoration('wiki_data/wiki_embedding/embedding.npz', self.w2v_mimic)
-            self.do_save_embedding(path)
+            self.do_save_embedding(path, save_item_embedding=self.save_item_embedding)
 
-    def do_save_embedding(self, path):
+    def do_save_embedding(self, path, save_item_embedding=True):
         print('Saving embeddings...', flush=True)
 
         torch.save({
