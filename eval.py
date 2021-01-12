@@ -3,9 +3,7 @@ import pandas as pd
 
 def page_id_lookup(df_cp, page_title):
     df = df_cp.query('page_title == @page_title')
-    if df['page_id'].nunique() > 1:
-        raise Exception('One page title has more than one page_id!')
-    return df['page_id'].iat[0]
+    return df['page_id'].unique().tolist()
 
 def find_link_pairs(df_cp, w2v_mimic, page_id):
     gen = read_link_pairs_chunks(n_chunk = 10, w2v_mimic =w2v_mimic)
