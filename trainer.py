@@ -15,7 +15,8 @@ class WikiTrainer:
     def __init__(self, hidden_dim1, item_embedding_dim, use_cuda, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
-                 sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5):
+                 sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5,
+                 testset_ratio = 0.1):
         
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:
@@ -28,12 +29,13 @@ class WikiTrainer:
         self.num_workers = num_workers
         self.page_min_count = page_min_count
         self.word_min_count = word_min_count
+        self.testset_ratio = testset_ratio
         if test:
             self.num_workers = 0
             n_chunk = 1
 
         # Initialize dataset, file_list set to None for now. Will update later.
-        self.dataset = WikiDataset(file_list = None, compression = 'zip', n_chunk = n_chunk, 
+        self.dataset = WikiDataset(file_list = None, compression = None, n_chunk = n_chunk, 
                               page_word_stats = page_word_stats, num_negs=num_negs, 
                               ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count)
         if collate_fn == 'custom':
@@ -103,6 +105,12 @@ class WikiTrainer:
 
         iprint = self.iprint #len(self.dataloader) // 20
 
+        self.file_handle_lists = get_files_in_dir(path_decoration(LINK_PAIRS_LOCATION, self.w2v_mimic))
+        self.file_handle_lists = sorted(self.file_handle_lists)
+        num_train_files = int(len(self.file_handle_lists) * (1 - self.testset_ratio))
+        self.file_handle_lists_train = self.file_handle_lists[:num_train_files]
+        self.file_handle_lists_test = self.file_handle_lists[num_train_files:]
+
         for iteration in range(self.iterations):
 
             print("\nIteration: " + str(iteration + 1))
@@ -110,21 +118,20 @@ class WikiTrainer:
 
             # Initialize file handle list
 
-            file_handle_lists = get_files_in_dir(path_decoration(LINK_PAIRS_LOCATION, self.w2v_mimic))
             if self.test:
-                file_handle_lists = file_handle_lists[:2]
+                self.file_handle_lists_train = self.file_handle_lists_train[:2]
 
             # shuffle order of input for each epoch
-            np.random.shuffle(file_handle_lists)
+            np.random.shuffle(self.file_handle_lists_train)
             if self.num_workers > 0:
-                file_handle_lists = np.array_split(file_handle_lists, self.num_workers)
+                self.file_handle_lists_train_split = np.array_split(self.file_handle_lists_train, self.num_workers)
             else:
                 self.timeout = 0
-                self.dataset.file_list = file_handle_lists
+                self.dataset.file_list = self.file_handle_lists_train
             dataloader = DataLoader(self.dataset, batch_size=self.batch_size,
                                      shuffle=False, num_workers=self.num_workers, 
                                      collate_fn=self.collate_fn, 
-                                     worker_init_fn=partial(self.dataset.worker_init_fn, file_handle_lists=file_handle_lists),
+                                     worker_init_fn=partial(self.dataset.worker_init_fn, file_handle_lists=self.file_handle_lists_train_split),
                                      timeout = self.timeout,
                                      drop_last = True,
                                      pin_memory=True
