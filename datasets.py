@@ -31,9 +31,9 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.page_frequency_over_threshold = {p:c for p, c in page_word_stats.page_frequency.items() if c > self.page_min_count}
         self.word_frequency_over_threshold = {p:c for p, c in page_word_stats.word_frequency.items() if c > self.word_min_count}
 
-        # id2page maps pytorch embedding back to 'page_id'
+        # emb2page maps pytorch embedding back to 'page_id'
         self.emb2page = list(self.page_frequency_over_threshold.keys())
-        # page2id is 'page_id' to pytorch embedding index mapping
+        # page2emb is 'page_id' to pytorch embedding index mapping
         self.page2emb = {p:i for i, p in enumerate(self.emb2page)}
 
         p,i = zip(*self.page2emb.items())
@@ -73,12 +73,13 @@ class WikiDataset(torch.utils.data.IterableDataset):
             # it does not invalidate current instance_dict after iterator is exhausted.
             self.pos = 0
 
+            df = df.query('page_id_source.isin(@self.page_frequency_over_threshold) & page_id_target.isin(@self.page_frequency_over_threshold)', engine = 'python')
             df = df.assign(
                     page_id_source = lambda df: df['page_id_source'].map(self.page2emb_series_map),
                     page_id_target = lambda df: df['page_id_target'].map(self.page2emb_series_map),
                 )
             # remove page ids that is below the min count threshold
-            df = df.query('page_id_source.isin(@self.page_frequency_over_threshold) & page_id_target.isin(@self.page_frequency_over_threshold)', engine = 'python')
+            
             df = df.sample(frac=1.0, replace = False)
             # print('source: %d, target: %d' % (df['page_id_source'].iat[0], df['page_id_target'].iat[0]))
             
