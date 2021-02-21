@@ -57,7 +57,7 @@ class PageWordStats(object):
                     .value_counts()
                 )
             # word_frequency is a list, where ith element is the word frequency of word with embedding id i.
-            self.word_frequency = {i:w for i, w in enumerate(s_words.tolist())}
+            self.word_frequency = {w:c for w, c in s_words.iteritems()}
 
             output_path = path_decoration(output_path, w2v_mimic)
             with open(output_path, 'w') as f:
@@ -66,7 +66,7 @@ class PageWordStats(object):
         print('There are %d unique pages' % len(self.page_frequency))
     
     def from_json(self, config):
-        self.word_frequency = {int(k):v for k, v in config['word_frequency'].items()}
+        self.word_frequency = {k:v for k, v in config['word_frequency'].items()}
         self.page_frequency = {int(k):v for k, v in config['page_frequency'].items()}
 
     def to_json_str(self):   

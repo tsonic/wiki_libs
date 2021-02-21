@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class OneTower(nn.Module):
-    def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, item_embedding_dim, sparse, single_layer = False):
+    def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, item_embedding_dim, sparse, single_layer = False, entity_type = 'page'):
         super(OneTower, self).__init__()
         self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
         self.single_layer = single_layer
@@ -15,6 +15,7 @@ class OneTower(nn.Module):
             self.linear1 = nn.Linear(input_embedding_dim, hidden_dim1)
             self.linear2 = nn.Linear(hidden_dim1, item_embedding_dim)
         self.item_embeddings = nn.Embedding(corpus_size, item_embedding_dim, sparse=sparse)
+        self.entity_type = entity_type
 
         input_initrange = 1.0 / input_embedding_dim
         item_initrange = 1.0 / item_embedding_dim
@@ -23,15 +24,20 @@ class OneTower(nn.Module):
     
     def forward_to_user_embedding_layer(self, pos_input):
         # input embedding
-        emb_input = self.input_embeddings(pos_input)
+        if self.entity_type == 'page':
+            emb_input = self.input_embeddings(pos_input)
 
-        if not self.single_layer:
-            h1 = F.relu(self.linear1(emb_input))
-            emb_user = F.relu(self.linear2(h1))
+            if not self.single_layer:
+                h1 = F.relu(self.linear1(emb_input))
+                emb_user = F.relu(self.linear2(h1))
+            else:
+                emb_user = emb_input
+            return emb_user
+        elif self.entity_type == 'word':
+            raise
+            pass
         else:
-            emb_user = emb_input
-        
-        return emb_user
+            raise Exception(f"unknown entity_type {self.entity_type}")
 
     def forward(self, pos_input, pos_item, neg_item):
 

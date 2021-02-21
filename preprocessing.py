@@ -19,8 +19,11 @@ LINK_PAIRS_LOCATION = 'wiki_data/link_pairs_shuffled_gz'
 
 def read_category_links(w2v_mimic = False):
     path = path_decoration(CATEGORY_LINKS_LOCATION, w2v_mimic)
-    return next(read_files_in_chunks(path, 
+    return (
+        next(read_files_in_chunks(path, 
                 sep = ',', compression = 'zip', n_chunk = 1, progress_bar=False))
+        .fillna({'page_title':'', 'page_category':''})
+    )
 
 def read_link_pairs_chunks(n_chunk = 10, w2v_mimic = False):
     path = path_decoration(LINK_PAIRS_LOCATION, w2v_mimic)
