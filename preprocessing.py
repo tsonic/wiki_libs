@@ -28,8 +28,16 @@ def read_category_links(w2v_mimic = False):
 def read_link_pairs_chunks(n_chunk = 10, w2v_mimic = False):
     path = path_decoration(LINK_PAIRS_LOCATION, w2v_mimic)
     print(f'reading link pairs in {n_chunk} chunks')
-    return read_files_in_chunks(path, 
-                            sep = ',', n_chunk = n_chunk, compression = None)
+    gen = read_files_in_chunks(path, 
+                                sep = ',', n_chunk = n_chunk, compression = None)
+    if w2v_mimic == False:
+        cp_pages = set(read_category_links(w2v_mimic = w2v_mimic)['page_id'])
+        for chunk in gen:
+            yield chunk.query('page_id_source.isin(@cp_pages) & page_id_target.isin(@cp_pages)', engine = 'python')
+    else:
+        # if using w2v mimic dataset, there are no df_cp
+        for chunk in gen:
+            yield chunk
 
 def get_file_handles_in_zip(f):
     zf = ZipFile(f)

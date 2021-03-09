@@ -3,6 +3,7 @@ import pandas as pd
 import itertools
 import ast
 import json
+import numpy as np
 from gensim.models.phrases import Phrases, Phraser
 from wiki_libs.preprocessing import read_category_links, process_title, path_decoration
 
@@ -42,8 +43,8 @@ def load_ngram_model(model_file):
 def get_df_title_category_transformed(read_cached = True, 
                                         fname='df_title_category_transformed.parquet', 
                                         ngram_model_name = "title_category_ngram_model.pickle"):
+    path = path_decoration(f'wiki_data/{fname}', w2v_mimic=False)
     if read_cached:
-        path = path_decoration('wiki_data/' + fname, w2v_mimic=False)
         df_title_category_transformed = pd.read_parquet(path, columns = ['page_id','page_title_category_transformed'])
         return df_title_category_transformed
 
@@ -77,8 +78,15 @@ def get_df_title_category_transformed(read_cached = True,
         .to_frame('page_category_transformed')
         .reset_index()
         .merge(df_title, on = 'page_title', how = 'left')
-        .assign(page_title_category_transformed = lambda df: 
-            (df['page_category_transformed'] + df['page_title_transformed']).apply(lambda x: list(set(x))))
+        .assign(page_title_transformed = lambda df: df['page_title_transformed'].apply(lambda x: list(set(x))))
     )
-    df_title_category_transformed.to_parquet(path_decoration(f'wiki_data/{fname}', w2v_mimic=False), index = False, compression = 'snappy')
+    # random sample category words
+    rng = np.random.RandomState(0)
+    df_title_category_transformed['page_category_transformed'].apply(rng.shuffle)
+    df_title_category_transformed = (
+        df_title_category_transformed
+        .assign(page_title_category_transformed = lambda df: 
+            (df['page_title_transformed'] + df['page_category_transformed']))
+    )
+    df_title_category_transformed.to_parquet(path, index = False, compression = 'snappy')
     return df_title_category_transformed[['page_id','page_title_category_transformed']]
