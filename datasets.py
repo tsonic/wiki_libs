@@ -1,6 +1,6 @@
 import torch
 import pandas as pd
-from wiki_libs.preprocessing import read_files_in_chunks, read_category_links, process_title, path_decoration
+from wiki_libs.preprocessing import read_files_in_chunks, read_category_links, process_title, path_decoration, read_page_data, append_suffix_to_fname 
 from wiki_libs.ngram import NGRAM_MODEL_PATH_PREFIX, load_ngram_model, get_df_title_category_transformed, transform_ngram
 import numpy as np
 
@@ -11,8 +11,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
     def __init__(self, file_list, compression, n_chunk, num_negs, page_word_stats, ns_exponent, w2v_mimic,
                 page_min_count = 0, word_min_count = 0, entity_type='page', title_category_trunc_len = 50,
                 ngram_model_name = "title_category_ngram_model.pickle", 
-                page_emb_to_word_emb_tensor_fname = None,
-                build_transformed_title_category = False,
+                page_emb_to_word_emb_tensor_fname = None, title_only = False,
                 ):
         'Initialization'
         #self.labels = labels
@@ -29,7 +28,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.page_min_count = page_min_count
         self.word_min_count = word_min_count
         self.ngram_model_name = ngram_model_name
-        self.build_transformed_title_category = build_transformed_title_category
+        self.build_transformed_title_category = page_emb_to_word_emb_tensor_fname is None
 
         self.negatives = []
         self.negpos = 0
@@ -39,6 +38,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.title_category_trunc_len = title_category_trunc_len
 
         self.entity_type = entity_type
+        self.title_only = title_only
 
         if self.entity_type == 'page':
             entity_frequency = page_word_stats.page_frequency
@@ -92,11 +92,22 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.word2emb = {p:i for i, p in enumerate(self.emb2word)}
 
         self.w2v_mimic = w2v_mimic
-        self.cp_pages = set(read_category_links(w2v_mimic = self.w2v_mimic)['page_id'])
+        self.cp_pages = set(read_page_data(w2v_mimic = self.w2v_mimic)['page_id'])
         
-        print(page_emb_to_word_emb_tensor_fname)
-        if entity_type == 'word':
-            if page_emb_to_word_emb_tensor_fname is None:
+        if self.entity_type == 'word':
+
+            if page_emb_to_word_emb_tensor_fname is not None:
+                # load tensor from cached
+                path = f'wiki_data/{page_emb_to_word_emb_tensor_fname}'
+                if self.title_only:
+                    path = append_suffix_to_fname(path, '_title_only')
+                self.page_emb_to_word_emb_tensor = torch.load(path, map_location = 'cpu')
+                print(f'read page_emb_to_word_emb_tensor from "{path}".')
+            if page_emb_to_word_emb_tensor_fname is None or self.page_emb_to_word_emb_tensor.shape[1] != self.title_category_trunc_len:
+                # regenerate tensor if the cached version width disagrees with pass in value
+                if page_emb_to_word_emb_tensor_fname is not None:
+                    print(f'the cached page_emb_to_word_emb_tensor has width {self.page_emb_to_word_emb_tensor.shape[1]}, '
+                    f'but title_category_trunc_len is {title_category_trunc_len}')
                 print('start generating page_emb_to_word_emb_tensor', flush = True)
                 import time
                 st = time.time()
@@ -104,28 +115,26 @@ class WikiDataset(torch.utils.data.IterableDataset):
                     get_df_title_category_transformed(
                         read_cached=not self.build_transformed_title_category,
                         ngram_model_name=ngram_model_name,
+                        title_only = self.title_only,
                         )
                     .set_index('page_id')
                     ['page_title_category_transformed']
                     # the last row in the embedding is padded 0 vector
-                    .apply(lambda x: [self.word2emb[x[i]] if i < len(x) else len(self.emb2word) for i in range(title_category_trunc_len)])
+                    .apply(lambda x: [self.word2emb[x[i]] if i < len(x) else len(self.emb2word) for i in range(self.title_category_trunc_len)])
                 )
-                # page_id 13342 not in get_df_title_category_transformed, not in df_cp
                 self.page_emb_to_word_emb_tensor = torch.LongTensor(
                     self.page_emb_to_word_emb_tensor
-                    .reindex(index = self.emb2page)
+                    .reindex(index = self.emb2page) #self.emb2page is a vector
                     .tolist()
                 )
                 
                 et = time.time()
+                path = f'wiki_data/page_emb_to_word_emb_tensor.npz'
+                if self.title_only:
+                    path = append_suffix_to_fname(path, '_title_only')
                 print(f'Finish generating page_emb_to_word_emb_tensor, took {et - st}', flush = True)
-                path = path_decoration('wiki_data/page_emb_to_word_emb_tensor.npz', self.w2v_mimic)
                 torch.save(self.page_emb_to_word_emb_tensor, path)
                 print(f'saved page_emb_to_word_emb_tensor to "{path}".')
-            else:
-                path = path_decoration(f'wiki_data/{page_emb_to_word_emb_tensor_fname}', self.w2v_mimic)
-                self.page_emb_to_word_emb_tensor = torch.load(path, map_location = 'cpu')
-                print(f'read page_emb_to_word_emb_tensor from "{path}".')
 
             # self.page[torch.LongTensor(self.title_category_transformed_dict[page_id]) for page_id in self.emb2page]
 
@@ -235,7 +244,14 @@ class WikiDataset(torch.utils.data.IterableDataset):
         negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
         id_list, positive_list = zip(*batches)
         ####### input are page embedding index, instead of page id.
-        return torch.LongTensor(id_list), torch.LongTensor(positive_list), torch.from_numpy(negs)
+        pos_u = torch.LongTensor(id_list)
+        pos_v = torch.LongTensor(positive_list)
+        neg_v = torch.from_numpy(negs)
+        if self.entity_type != 'page':
+            pos_u = self.page_emb_to_word_emb_tensor[pos_u]
+            pos_v = self.page_emb_to_word_emb_tensor[pos_v]
+            neg_v = self.page_emb_to_word_emb_tensor[neg_v]
+        return pos_u, pos_v, neg_v
 
     @staticmethod
     def worker_init_fn(worker_id, file_handle_lists):

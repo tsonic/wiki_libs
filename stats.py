@@ -1,4 +1,4 @@
-from wiki_libs.preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks, path_decoration
+from wiki_libs.preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks, path_decoration, append_suffix_to_fname
 import pandas as pd
 import json
 from wiki_libs.ngram import load_ngram_model, NGRAM_MODEL_PATH_PREFIX, get_transformed_title_category
@@ -12,10 +12,13 @@ class PageWordStats(object):
                  n_chunk = 10,
                  w2v_mimic = False,
                  json_str = None,
+                 title_only = False,
                  ):
 
         if read_path is not None:
             read_path = path_decoration(read_path, w2v_mimic)
+            if title_only:
+                read_path = append_suffix_to_fname(read_path, '_title_only')
             with open(read_path, 'r') as f:
                 config = json.load(f)
                 self.from_json(config)
@@ -52,14 +55,19 @@ class PageWordStats(object):
                 s_words = pd.Series(['dummy']).value_counts()
             else:
                 title_transformed, category_transformed = get_transformed_title_category(ngram_model)
+                all_words = title_transformed
+                if not title_only:
+                    all_words += category_transformed
                 s_words = (
-                    pd.Series(itertools.chain(*(title_transformed + category_transformed)))
+                    pd.Series(itertools.chain(*all_words))
                     .value_counts()
                 )
             # word_frequency is a list, where ith element is the word frequency of word with embedding id i.
             self.word_frequency = {w:c for w, c in s_words.iteritems()}
 
             output_path = path_decoration(output_path, w2v_mimic)
+            if title_only:
+                output_path = append_suffix_to_fname(output_path, '_title_only')
             with open(output_path, 'w') as f:
                 f.write(self.to_json_str())
         print('There are %d unique words/ngrams' % len(self.word_frequency))

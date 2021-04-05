@@ -14,8 +14,13 @@ def is_colab():
     return 'google.colab' in sys.modules
 
 CATEGORY_LINKS_LOCATION = 'wiki_data/categorylinks_page_merged.zip'
+PAGE_DATA_LOCATION = 'wiki_data/page_data.tsv'
 LINK_PAIRS_LOCATION = 'wiki_data/link_pairs_shuffled_gz'
 
+
+def read_page_data(w2v_mimic = False):
+    path = path_decoration(PAGE_DATA_LOCATION, w2v_mimic)
+    return pd.read_csv(path, sep = '\t', keep_default_na = False, na_values = [])
 
 def read_category_links(w2v_mimic = False):
     path = path_decoration(CATEGORY_LINKS_LOCATION, w2v_mimic)
@@ -31,9 +36,9 @@ def read_link_pairs_chunks(n_chunk = 10, w2v_mimic = False):
     gen = read_files_in_chunks(path, 
                                 sep = ',', n_chunk = n_chunk, compression = None)
     if w2v_mimic == False:
-        cp_pages = set(read_category_links(w2v_mimic = w2v_mimic)['page_id'])
+        pages = set(read_page_data(w2v_mimic = w2v_mimic)['page_id'])
         for chunk in gen:
-            yield chunk.query('page_id_source.isin(@cp_pages) & page_id_target.isin(@cp_pages)', engine = 'python')
+            yield chunk.query('page_id_source.isin(@pages) & page_id_target.isin(@pages)', engine = 'python')
     else:
         # if using w2v mimic dataset, there are no df_cp
         for chunk in gen:
@@ -79,7 +84,7 @@ def read_files_in_chunks(path, sep = ',', compression = 'zip', n_chunk = 10, pro
 
     if shuffle:
         np.random.shuffle(file_handle_list)
-    chunks = np.array_split(file_handle_list, n_chunk)
+    chunks = np.array_split(file_handle_list, min(n_chunk, len(file_handle_list)))
     if progress_bar:
         chunks = tqdm(chunks)
     for file_handles in chunks:
@@ -104,12 +109,16 @@ def is_ascii(s):
     return all(ord(c) < 128 for c in s)
 
 def convert_to_w2v_mimic_path(path):
+    return append_suffix_to_fname(path, '_w2v_mimic')
+
+
+def append_suffix_to_fname(path, suffix):
     path_segs = path.split('.')
     if len(path_segs) == 1 \
         or (len(path_segs) == 2 and path[:2] == './'):  #
-        path_segs[-1] += '_w2v_mimic'
+        path_segs[-1] += suffix
     else:
-        path_segs[-2] += '_w2v_mimic'
+        path_segs[-2] += suffix
     return '.'.join(path_segs)
 
 def path_decoration(path, w2v_mimic):

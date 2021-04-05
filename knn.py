@@ -6,7 +6,7 @@ import pandas as pd
 import json
 import numpy as np
 
-def build_knn(emb_file, df_cp, w2v_mimic, use_user_emb = True, algorithm = 'brute', k = 10):
+def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'brute', k = 10):
     emb_file = path_decoration(emb_file, w2v_mimic = w2v_mimic)
     saved_embeddings = torch.load(emb_file, map_location = 'cpu')
     USER_ID = 'page_id'
@@ -36,7 +36,7 @@ def build_knn(emb_file, df_cp, w2v_mimic, use_user_emb = True, algorithm = 'brut
             'item_embedding_normalized':list(normalize(item_embedding)), 
             }, index = index)
         .merge(
-            df_cp.drop_duplicates('page_id')
+            df_page.drop_duplicates('page_id')
                 .dropna(subset=['page_title'])
                 [['page_id', 'page_title']], 
             left_index = True, right_on = 'page_id')

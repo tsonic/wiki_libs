@@ -41,13 +41,13 @@ class OneTower(nn.Module):
         else:
             embedding_lookup_func = self.embedding_lookup
         emb_input = embedding_lookup_func(self.input_embeddings, pos_input)
-        
+
         if not self.single_layer:
             h1 = F.relu(self.linear1(emb_input))
             emb_user = F.relu(self.linear2(h1))
         else:
             emb_user = emb_input
-            return emb_user
+        return emb_user
 
     def forward(self, pos_input, pos_item, neg_item):
 
@@ -75,9 +75,11 @@ class OneTower(nn.Module):
         elif self.entity_type == 'word':
             # need to fix lookup -1 embedding index should return 0 embedding vector
             # mean pooling
-            select = (embed_index >= 0)
+            select = (embed_index != embedding.padding_idx)
             sentence_emb_input = embedding(embed_index)
-            emb_input = sentence_emb_input.sum(axis = -1) / select.sum(axis = -1).unsqueeze(-1)
+            emb_input = sentence_emb_input.sum(axis = -2) / select.sum(axis = -1).unsqueeze(-1)
+            # if 4921 in embed_index:
+            #     raise
         
         return emb_input
         

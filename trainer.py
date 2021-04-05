@@ -1,4 +1,5 @@
-import gc 
+import gc
+import pickle 
 import torch
 from wiki_libs.stats import PageWordStats
 from wiki_libs.datasets import WikiDataset
@@ -8,6 +9,7 @@ from wiki_libs.preprocessing import convert_to_w2v_mimic_path, get_files_in_dir,
 from torch.utils.data import DataLoader
 from functools import partial
 import numpy as np
+import time
 
 
 class WikiTrainer:
@@ -16,13 +18,14 @@ class WikiTrainer:
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
-                 testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None):
+                 testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
+                 dataload_only = False, title_only = False):
         
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:
             print('Using w2v mimic files for training...', flush=True)
 
-        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic)
+        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic, title_only = title_only)
 
         self.timeout = timeout
         self.test = test
@@ -33,6 +36,7 @@ class WikiTrainer:
         self.entity_type = entity_type
         self.testset_ratio = testset_ratio
         self.amp = amp
+        self.dataload_only = dataload_only
         if test:
             self.num_workers = 0
             n_chunk = 1
@@ -42,6 +46,7 @@ class WikiTrainer:
                               page_word_stats = page_word_stats, num_negs=num_negs, w2v_mimic = w2v_mimic,
                               ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count, 
                               entity_type=entity_type, page_emb_to_word_emb_tensor_fname=page_emb_to_word_emb_tensor_fname,
+                              title_category_trunc_len = title_category_trunc_len, title_only = title_only
                               )
         if collate_fn == 'custom':
             self.collate_fn = self.dataset.collate
@@ -117,6 +122,7 @@ class WikiTrainer:
         else:
             scheduler = None
         running_loss = 0.0
+        running_batch_time = 0.0
 
         iprint = self.iprint #len(self.dataloader) // 20
 
@@ -154,35 +160,40 @@ class WikiTrainer:
                                     )
             # if self.amp:
             #     scaler = torch.cuda.amp.GradScaler()
+            prev_time = time.time()
+            prev_i = 0
             for i, sample_batched in enumerate(dataloader):
-                # ipdb.set_trace()
-                if len(sample_batched[0]) > 1:
-                    if self.entity_type == 'page':
-                        pos_u = sample_batched[0].to(self.device)
-                        pos_v = sample_batched[1].to(self.device)
-                        neg_v = sample_batched[2].to(self.device)
-                    else:
-                        pos_u = self.dataset.page_emb_to_word_emb_tensor[sample_batched[0]].to(self.device)
-                        pos_v = self.dataset.page_emb_to_word_emb_tensor[sample_batched[1]].to(self.device)
-                        neg_v = self.dataset.page_emb_to_word_emb_tensor[sample_batched[2]].to(self.device)
-                    
-                    optimizer.zero_grad()
-                    loss = self.model.forward(pos_u, pos_v, neg_v)
-                    # if self.amp:
-                    #     scaler.scale(loss).backward()
-                    #     scaler.step(optimizer)
-                    #     scaler.update()
-                    # else:
-                    loss.backward()
-                    optimizer.step()
+                if self.dataload_only:
+                    continue
+                if len(sample_batched[0]) == 0:
+                    continue
 
+                pos_u = sample_batched[0].to(self.device)
+                pos_v = sample_batched[1].to(self.device)
+                neg_v = sample_batched[2].to(self.device)
+                
+                optimizer.zero_grad()
+                loss = self.model.forward(pos_u, pos_v, neg_v)
+                # if self.amp:
+                #     scaler.scale(loss).backward()
+                #     scaler.step(optimizer)
+                #     scaler.update()
+                # else:
+                loss.backward()
+                optimizer.step()
 
-                    running_loss = running_loss * (1 - 5/iprint) + loss.item() * (5/iprint)
-                    if i > 0 and i % iprint == 0:
-                        
-                        print(" Loss: " + str(running_loss) + ' lr: ' 
-                            + str([param_group['lr'] for param_group in optimizer.param_groups]))
-                        #print(" Loss: " + str(running_loss))
+                running_loss = running_loss * (1 - 5/iprint) + loss.item() * (5/iprint)
+
+                # running_batch_time = running_batch_time * (1 - 5/iprint) + (time_now - start_time) * (5/iprint)
+                # start_time = time_now
+                if i > 0 and i % iprint == 0:
+                    time_now = time.time()
+                    print(f" Loss: {running_loss} lr: {str([param_group['lr'] for param_group in optimizer.param_groups])}"
+                        f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
+                    )
+                    prev_time = time_now
+                    prev_i = i
+
             print(i)
             if self.lr_schedule:
                 scheduler.step()
@@ -212,6 +223,16 @@ class WikiTrainer:
             output_dict['page_emb_to_word_emb_tensor'] = self.dataset.page_emb_to_word_emb_tensor
             output_dict['emb2page'] = self.dataset.emb2page
         torch.save(output_dict, path)
+
+    def save_model(self, fname = 'trained_model'):
+        path = path_decoration(f'wiki_data/saved_trained_model/{fname}_{self.entity_type}.npz', self.w2v_mimic)
+        torch.save(self, path)
+    
+    @classmethod
+    def load_model(cls, fname, w2v_mimic):
+        path = path_decoration(f'wiki_data/saved_trained_model/{fname}.npz', w2v_mimic)
+        return torch.load(path, map_location = 'cpu')
+
 
 
 class MultipleOptimizer:
