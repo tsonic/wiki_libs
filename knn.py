@@ -6,7 +6,37 @@ import pandas as pd
 import json
 import numpy as np
 
-def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'brute', k = 10):
+try:
+    import faiss
+
+
+    class FaissKNeighbors:
+        def __init__(self, n_neighbors=5, device = 'cpu'):
+            self.index = None
+            self.y = None
+            self.n_neighbors = n_neighbors
+            self.device = device
+
+        def fit(self, X):
+
+            res = faiss.StandardGpuResources()
+            self.index = faiss.IndexFlatL2(X.shape[1])
+            if self.device == 'gpu':
+                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+            self.index.add(X.astype(np.float32))
+
+        def kneighbors(self, X, n_neighbors = None, return_distance = False):
+            if n_neighbors is None:
+                n_neighbors = self.n_neighbors
+            distances, indices = self.index.search(X.astype(np.float32), k=n_neighbors)
+            if not return_distance:
+                return indices
+            return distances, indices
+except:
+    pass
+
+
+def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'brute', k = 10, device = 'cpu'):
     emb_file = path_decoration(emb_file, w2v_mimic = w2v_mimic)
     saved_embeddings = torch.load(emb_file, map_location = 'cpu')
     USER_ID = 'page_id'
@@ -44,10 +74,44 @@ def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'br
     )
     
     #kdt = KDTree(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]), leaf_size=100, metric='euclidean')
-
-    nn = NearestNeighbors(n_neighbors=k, algorithm=algorithm, leaf_size=1000, n_jobs=-1, p=2)
-    nn = nn.fit(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]))
+    if algorithm == "faiss":
+        nn = FaissKNeighbors(n_neighbors=k, device=device)
+    else:
+        nn = NearestNeighbors(n_neighbors=k, algorithm=algorithm, leaf_size=100, n_jobs=-1, p=2)
+    nn.fit(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]))
     return df_embedding, nn
+
+def top_k(inputs, nn, df_embedding,  k, input_type = 'index', output_type = 'index',
+             pos_keys = None, neg_keys = None, use_user_emb = True):
+    if pos_keys is None:
+        pos_keys = []
+    if neg_keys is None:
+        neg_keys = []
+    # the raw embedding still need vector operations, 
+    # so does not directly use e.g. 'user_embedding_normalized'
+    # this avoid scaling up vectors of regular words like 'the', 'and'
+    emb_name = 'user_embedding' if use_user_emb else 'item_embedding'
+    if isinstance(inputs, str) or isinstance(inputs, int):
+        inputs = [inputs]
+    df_embedding = df_embedding.reset_index()
+    if input_type != 'index':
+        df_embedding = df_embedding.set_index(input_type)
+
+    new_v = np.vstack(df_embedding.loc[inputs, emb_name].values)
+    for key in pos_keys:
+        # np.array is for broadcast add
+        new_v += np.array([df_embedding.loc[key, emb_name].values])
+    for key in neg_keys:
+        new_v -= np.array([df_embedding.loc[key, emb_name].values])
+    # normalize again after vector operation
+    new_v = normalize(new_v)
+    dist, ind = nn.kneighbors(new_v, n_neighbors = k, return_distance=True)
+    if output_type == 'index':
+        return dist, ind
+    df_embedding = df_embedding.reset_index()
+    
+    return dist, df_embedding[output_type].values[ind]
+
 
 
 def top_knn(nn, df_embedding, pos_keys = None, neg_keys = None, use_user_emb = True):
@@ -55,6 +119,9 @@ def top_knn(nn, df_embedding, pos_keys = None, neg_keys = None, use_user_emb = T
         pos_keys = []
     if neg_keys is None:
         neg_keys = []
+    # the raw embedding still need vector operations, 
+    # so does not directly use e.g. 'user_embedding_normalized'
+    # this avoid scaling up vectors of regular words like 'the', 'and'
     emb_name = 'user_embedding' if use_user_emb else 'item_embedding'
     emb_dim = len(df_embedding[emb_name].iat[0])
     new_v = np.zeros(emb_dim)
@@ -62,6 +129,7 @@ def top_knn(nn, df_embedding, pos_keys = None, neg_keys = None, use_user_emb = T
         new_v += df_embedding.loc[key,emb_name] 
     for key in neg_keys:
         new_v -= df_embedding.loc[key,emb_name] 
+    # normalize again after vector operation
     new_v = normalize(new_v)
-    dist, ind = nn.kneighbors([new_v], return_distance=True)
+    dist, ind = nn.kneighbors(np.array([new_v]), return_distance=True)
     return df_embedding.iloc[ind[0],:].assign(dist = dist[0])[['dist']].transpose()
