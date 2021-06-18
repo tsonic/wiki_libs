@@ -19,7 +19,7 @@ class WikiTrainer:
                  optimizer='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
-                 dataload_only = False, title_only = False):
+                 dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False):
         
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:
@@ -40,6 +40,7 @@ class WikiTrainer:
         if test:
             self.num_workers = 0
             n_chunk = 1
+            self.save_embedding = False
 
         # Initialize dataset, file_list set to None for now. Will update later.
         self.dataset = WikiDataset(file_list = None, compression = None, n_chunk = n_chunk, 
@@ -66,6 +67,9 @@ class WikiTrainer:
         self.batch_size = batch_size
         self.iterations = iterations
         self.initial_lr = initial_lr
+        self.normalize = normalize
+        self.temperature = temperature
+        self.two_tower = two_tower
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
@@ -75,6 +79,9 @@ class WikiTrainer:
             'sparse':sparse,
             'single_layer':single_layer,
             'entity_type':self.entity_type,
+            'normalize':self.normalize,
+            'temperature':self.temperature,
+            'two_tower':self.two_tower,
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -105,20 +112,32 @@ class WikiTrainer:
         elif self.optimizer == 'sparse_adam':
             optimizer = optim.SparseAdam(list(self.model.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer == 'sparse_dense_adam':
-            opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight, self.model.item_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-            opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-            optimizer = MultipleOptimizer(opti_sparse, opti_dense)
+            if self.model.two_tower:
+                opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
+                opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight, self.model.linear1_item.weight, self.model.linear2_item.weight], lr=self.initial_lr, **self.optimizer_kwargs)
+                optimizer = MultipleOptimizer(opti_sparse, opti_dense)                
+            else:
+                # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight, self.model.item_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
+                # opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight], lr=self.initial_lr, **self.optimizer_kwargs)
+                opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()) + list(self.model.item_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
+                opti_dense = optim.Adam(list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
+                optimizer = MultipleOptimizer(opti_sparse, opti_dense)
         elif self.optimizer == 'sgd':
             optimizer = optim.SGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer == 'asgd':
             optimizer = optim.ASGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer == 'adagrad':
             optimizer = optim.Adagrad(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+        elif self.optimizer == 'rmsprop':
+            optimizer = optim.RMSprop(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
         else:
             raise Exception('Unknown optimizer!')
 
         if self.lr_schedule:
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.iterations)
+            if self.optimizer == 'sparse_dense_adam':
+                scheduler = MultipleScheduler(optimizer, self.iterations)
+            else:
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.iterations)
         else:
             scheduler = None
         running_loss = 0.0
@@ -188,7 +207,11 @@ class WikiTrainer:
                 # start_time = time_now
                 if i > 0 and i % iprint == 0:
                     time_now = time.time()
-                    print(f" Loss: {running_loss} lr: {str([param_group['lr'] for param_group in optimizer.param_groups])}"
+                    if self.optimizer == 'sparse_dense_adam':
+                        lr = [param_group['lr'] for param_group in optimizer.optimizers[0].param_groups]
+                    else:
+                        lr = [param_group['lr'] for param_group in optimizer.param_groups]
+                    print(f" Loss: {running_loss} lr: {lr}"
                         f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
                     )
                     prev_time = time_now
@@ -198,6 +221,9 @@ class WikiTrainer:
             if self.lr_schedule:
                 scheduler.step()
             print(" Loss: " + str(running_loss))
+            if self.save_embedding:
+                path = path_decoration(f'wiki_data/wiki_embedding/embedding_iter_{iteration}_{self.entity_type}.npz', self.w2v_mimic)
+                self.do_save_embedding(path, save_item_embedding=self.save_item_embedding)
 
         #self.skip_gram_model.save_embedding(self.data.id2word, self.output_file_name)
         if self.save_embedding:
@@ -212,9 +238,13 @@ class WikiTrainer:
             'entity_type':self.entity_type,
             'model_init_kwargs': self.model_init_kwargs,
             'model_state_dict': self.model.state_dict(),
-            'user_embeddings':self.model.input_embeddings.weight.cpu().data.numpy(),
-            'item_embeddings':self.model.item_embeddings.weight.cpu().data.numpy(),
+#            'user_embeddings':self.model.forward_to_user_embedding_layer(torch.LongTensor(range(self.model.corpus_size)).to(self.device), in_chunks = True).cpu().data.numpy(),
         }
+
+        # if self.model.two_tower:
+        #     output_dict['item_embeddings'] = self.model.forward_to_user_embedding_layer(torch.LongTensor(range(self.model.corpus_size)).to(self.device), in_chunks = True, user_tower = False).cpu().data.numpy(),
+        # else:
+        #     output_dict['item_embeddings'] = self.model.item_embeddings.weight.cpu().data.numpy()
 
         if self.entity_type == 'page':
             output_dict['emb2page_over_threshold'] = self.dataset.emb2page_over_threshold
@@ -226,16 +256,18 @@ class WikiTrainer:
 
     def save_model(self, fname = 'trained_model'):
         path = path_decoration(f'wiki_data/saved_trained_model/{fname}_{self.entity_type}.npz', self.w2v_mimic)
+        # set iterator to None to avoid pickle error on generator
+        self.dataset.chunk_iterator = None
         torch.save(self, path)
     
     @classmethod
-    def load_model(cls, fname, w2v_mimic):
-        path = path_decoration(f'wiki_data/saved_trained_model/{fname}.npz', w2v_mimic)
+    def load_model(cls, fname, w2v_mimic, entity_type):
+        path = path_decoration(f'wiki_data/saved_trained_model/{fname}_{entity_type}.npz', w2v_mimic)
         return torch.load(path, map_location = 'cpu')
 
 
 
-class MultipleOptimizer:
+class MultipleOptimizer(optim.Optimizer):
     def __init__(self, *op):
         self.optimizers = op
 
@@ -246,3 +278,14 @@ class MultipleOptimizer:
     def step(self):
         for op in self.optimizers:
             op.step()
+
+
+class MultipleScheduler(object):
+    def __init__(self, optimizer, iter_num):
+        self.optimizer = optimizer
+        self.iter_num = iter_num
+        self.schedulers = [torch.optim.lr_scheduler.CosineAnnealingLR(op, self.iter_num) for op in optimizer.optimizers]
+
+    def step(self):
+        for sc in self.schedulers:
+            sc.step()

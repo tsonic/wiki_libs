@@ -36,7 +36,7 @@ except:
     pass
 
 
-def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'brute', k = 10, device = 'cpu'):
+def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorithm = 'brute', k = 10, device = 'cpu'):
     emb_file = path_decoration(emb_file, w2v_mimic = w2v_mimic)
     saved_embeddings = torch.load(emb_file, map_location = 'cpu')
     USER_ID = 'page_id'
@@ -49,7 +49,7 @@ def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'br
         page_emb_to_word_emb_tensor = saved_embeddings['page_emb_to_word_emb_tensor']
 
         user_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor, in_chunks=True).detach().numpy()
-        item_embedding = model.embedding_lookup_n_chunk(model.item_embeddings, page_emb_to_word_emb_tensor).detach().numpy()
+        item_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor, in_chunks=True, user_tower = True).detach().numpy()
         index = json.loads(str(saved_embeddings['emb2page']))
     elif saved_embeddings['entity_type'] == "page":
         user_embedding = saved_embeddings['user_embeddings']
@@ -78,7 +78,7 @@ def build_knn(emb_file, df_page, w2v_mimic, use_user_emb = True, algorithm = 'br
         nn = FaissKNeighbors(n_neighbors=k, device=device)
     else:
         nn = NearestNeighbors(n_neighbors=k, algorithm=algorithm, leaf_size=100, n_jobs=-1, p=2)
-    nn.fit(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]))
+    nn.fit(np.vstack(df_embedding[emb_name + "_normalized"]))
     return df_embedding, nn
 
 def top_k(inputs, nn, df_embedding,  k, input_type = 'index', output_type = 'index',

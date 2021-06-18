@@ -38,13 +38,20 @@ def find_word_emb_from_title(word, trained_model, df_page):
 def find_words_from_title(word, trained_model, df_page):
     return [trained_model.dataset.emb2word[i] for i in find_word_emb_from_title(word, trained_model, df_page)]
 
-def compute_recall(df_links, df_embedding, nn, k):
+def compute_recall(df_links, df_embedding, nn, k_list, use_user_emb = True):
     all_page_ids = df_links['page_id_source'].unique().tolist()
-    dist, ind = top_k(all_page_ids, nn, df_embedding, k, input_type = 'page_id', output_type = 'page_id',
-             pos_keys = None, neg_keys = None, use_user_emb = True)
+    if isinstance(k_list, int):
+        k_list = [k_list]
+    k_max = max(k_list)
+    dist, ind = top_k(all_page_ids, nn, df_embedding, k_max, input_type = 'page_id', output_type = 'page_id',
+             pos_keys = None, neg_keys = None, use_user_emb = use_user_emb)
     df_nn = pd.DataFrame({'page_id_source': all_page_ids, 'nn': list(ind)})
     df_merged = df_links.merge(df_nn, on = 'page_id_source')
-    return (df_merged['page_id_target'].values[:,np.newaxis] == np.vstack(df_merged['nn'])).any(axis = 1).mean()
+    return pd.DataFrame({
+        'k': k_list,
+        'recall': [(df_merged['page_id_target'].values[:,np.newaxis] == np.vstack(df_merged['nn'])[:,:k])
+                    .any(axis = 1).mean() for k in k_list]
+    })
 
     
     

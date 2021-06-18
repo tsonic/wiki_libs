@@ -135,18 +135,6 @@ class WikiDataset(torch.utils.data.IterableDataset):
                 print(f'Finish generating page_emb_to_word_emb_tensor, took {et - st}', flush = True)
                 torch.save(self.page_emb_to_word_emb_tensor, path)
                 print(f'saved page_emb_to_word_emb_tensor to "{path}".')
-
-            # self.page[torch.LongTensor(self.title_category_transformed_dict[page_id]) for page_id in self.emb2page]
-
-        # if self.entity_type == 'word':
-        #     print('start converting page_title_category_transformed to embedding index', flush = True)         
-        #     self.df_map = (
-        #         self.df_title_category_transformed.assign(
-        #             page_title_category_transformed = lambda df: df['page_title_category_transformed'].apply(lambda x: [self.entity2emb[e] for e in x])
-        #         )
-        #         .set_index('page_id')
-        #     )
-        #     print('finish converting page_title_category_transformed to embedding index', flush = True)
             
         
         if entity_type == "page":
@@ -160,22 +148,6 @@ class WikiDataset(torch.utils.data.IterableDataset):
         print(f'Number of unique words included is {len(self.word_frequency_over_threshold)}')
 
         self.initTableNegatives(ns_exponent=ns_exponent)
-
-    # Iterable may not know the length of the stream before hand
-    # def __len__(self):
-    #     'Denotes the total number of samples'
-    #     return len(self.list_IDs)
-
-    # def __getitem__(self, index):
-    #     'Generates one sample of data'
-    #     # Select sample
-    #     ID = self.list_IDs[index]
-
-    #     # Load data and get label
-    #     X = torch.load('data/' + ID + '.pt')
-    #     y = self.labels[ID]
-
-    #     return X, y
 
     
     def __iter__(self):
@@ -201,8 +173,6 @@ class WikiDataset(torch.utils.data.IterableDataset):
                     page_id_source = lambda df: df['page_id_source'].map(self.page2emb_series_map),
                     page_id_target = lambda df: df['page_id_target'].map(self.page2emb_series_map),
                 )
-            if df.isnull().any().any():
-                raise
             df = df.sample(frac=1.0, replace = False)
             self.instance_dict = list(df.itertuples(index = False, name = None))
         ret = self.instance_dict[self.pos]
@@ -213,7 +183,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
         response = self.negatives[self.negpos:self.negpos + size]
         # reshuffle negative table if negpos > total neg table size.
         if (self.negpos + size) // len(self.negatives) >= 1:
-            # print('reshuffle negative table...')
+            print('reshuffle negative table...')
             np.random.shuffle(self.negatives)
         self.negpos = (self.negpos + size) % len(self.negatives)
         if len(response) != size:
