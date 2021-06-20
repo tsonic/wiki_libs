@@ -7,7 +7,7 @@ import torch.nn.functional as F
 class OneTower(nn.Module):
     def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, 
                 item_embedding_dim, sparse, single_layer = False, entity_type = 'page', normalize = False,
-                temperature = 1, two_tower = False
+                temperature = 1, two_tower = False, relu = True,
                 ):
         super(OneTower, self).__init__()
         self.normalize = normalize
@@ -15,6 +15,7 @@ class OneTower(nn.Module):
         self.entity_type = entity_type
         self.two_tower = two_tower
         self.corpus_size = corpus_size
+        self.relu = relu
         if self.entity_type == 'page':
             self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
             if not self.two_tower:
@@ -25,17 +26,18 @@ class OneTower(nn.Module):
                 self.item_embeddings = nn.Embedding(corpus_size + 1, item_embedding_dim, sparse=sparse, padding_idx=-1)
         self.single_layer = single_layer
 
-        print(self.single_layer)
+        print(f'single_layer is {self.single_layer}')
 
         # if single_layer is True, it essentially become w2v model with single hidden layer
         if not self.single_layer:
             self.linear1 = nn.Linear(input_embedding_dim, hidden_dim1)
             self.linear2 = nn.Linear(hidden_dim1, item_embedding_dim)
 
-            # self.linear1.weight.data.copy_(torch.eye(128))
-            # self.linear2.weight.data.copy_(torch.eye(128))
-            # self.linear1.bias.data.copy_(torch.tensor(0))
-            # self.linear2.bias.data.copy_(torch.tensor(0))
+            if input_embedding_dim == hidden_dim1:
+                self.linear1.weight.data.copy_(torch.eye(input_embedding_dim))
+                self.linear2.weight.data.copy_(torch.eye(input_embedding_dim))
+                self.linear1.bias.data.copy_(torch.tensor(0))
+                self.linear2.bias.data.copy_(torch.tensor(0))
 
             # self.linear1.weight.requires_grad = False
             # self.linear1.bias.requires_grad = False
@@ -46,10 +48,11 @@ class OneTower(nn.Module):
             if self.two_tower:
                 self.linear1_item = nn.Linear(input_embedding_dim, hidden_dim1)
                 self.linear2_item = nn.Linear(hidden_dim1, item_embedding_dim)
-                # self.linear1_item.weight.data.copy_(torch.eye(128))
-                # self.linear2_item.weight.data.copy_(torch.eye(128))
-                # self.linear1_item.data.copy_(torch.tensor(0))
-                # self.linear2_item.data.copy_(torch.tensor(0))
+                if input_embedding_dim == hidden_dim1:
+                    self.linear1_item.weight.data.copy_(torch.eye(input_embedding_dim))
+                    self.linear2_item.weight.data.copy_(torch.eye(input_embedding_dim))
+                    self.linear1_item.data.copy_(torch.tensor(0))
+                    self.linear2_item.data.copy_(torch.tensor(0))
 
         input_initrange = 1.0 / input_embedding_dim
         init.uniform_(self.input_embeddings.weight.data, -input_initrange, input_initrange)
@@ -68,24 +71,31 @@ class OneTower(nn.Module):
             embedding_lookup_func = self.embedding_lookup_n_chunk
         else:
             embedding_lookup_func = self.embedding_lookup
-        
 
         if user_tower:
             emb_input = embedding_lookup_func(self.input_embeddings, pos_input)
             if self.single_layer:
                 return emb_input
             else:
-                h1 = F.relu(self.linear1(emb_input))
+                h1 = self.linear1(emb_input)
+                if self.relu:
+                    h1 = F.relu(h1)
                 output = F.relu(self.linear2(h1))
+                if self.relu:
+                    output = F.relu(output)
                 return output
 
         else:
             emb_item = embedding_lookup_func(self.item_embeddings, pos_input)
-            if self.single_layer:
+            if self.single_layer or not self.two_tower:
                 return emb_item
             else:
                 h1 = self.linear1_item(emb_item)
+                if self.relu:
+                    h1 = F.relu(h1)
                 output = self.linear2_item(h1)
+                if self.relu:
+                    output = F.relu(output)
                 return output
 
 
@@ -98,7 +108,6 @@ class OneTower(nn.Module):
 
         # output embedding for negative instance
         emb_neg_item = self.forward_to_user_embedding_layer(neg_item, user_tower=False)
-
 
         if self.normalize:
             emb_user = F.normalize(emb_user, p=2, dim=-1)

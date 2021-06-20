@@ -37,8 +37,13 @@ except:
 
 
 def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorithm = 'brute', k = 10, device = 'cpu'):
-    emb_file = path_decoration(emb_file, w2v_mimic = w2v_mimic)
-    saved_embeddings = torch.load(emb_file, map_location = 'cpu')
+    if isinstance(emb_file, str):
+        emb_file = path_decoration(emb_file, w2v_mimic = w2v_mimic)
+        saved_embeddings = torch.load(emb_file, map_location = 'cpu')
+    else:
+        # emb_file can be the output_dict embedding object directly
+        saved_embeddings = emb_file
+        
     USER_ID = 'page_id'
     ITEM_ID = 'page_id'
 

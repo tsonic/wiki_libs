@@ -183,7 +183,6 @@ class WikiDataset(torch.utils.data.IterableDataset):
         response = self.negatives[self.negpos:self.negpos + size]
         # reshuffle negative table if negpos > total neg table size.
         if (self.negpos + size) // len(self.negatives) >= 1:
-            print('reshuffle negative table...')
             np.random.shuffle(self.negatives)
         self.negpos = (self.negpos + size) % len(self.negatives)
         if len(response) != size:

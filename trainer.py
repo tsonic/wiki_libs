@@ -1,26 +1,119 @@
 import gc
 import pickle 
 import torch
+import pandas as pd
 from wiki_libs.stats import PageWordStats
 from wiki_libs.datasets import WikiDataset
 from wiki_libs.models import OneTower
+from wiki_libs.eval import compute_recall
+from wiki_libs.knn import build_knn
 import torch.optim as optim
-from wiki_libs.preprocessing import convert_to_w2v_mimic_path, get_files_in_dir, path_decoration, LINK_PAIRS_LOCATION
+from wiki_libs.preprocessing import (
+    convert_to_w2v_mimic_path, get_files_in_dir, path_decoration, 
+    LINK_PAIRS_LOCATION, read_files_in_chunks, read_page_data
+)
 from torch.utils.data import DataLoader
 from functools import partial
+from IPython.core.display import display, HTML
 import numpy as np
 import time
+import os
+import json
 
+BASE_CONFIG = {
+    'hidden_dim1':128, 
+    'item_embedding_dim':128, 
+    #'output_file':"gdrive/My Drive/Projects with Wei/Wei_tmp_outputs/w2v_output/out.vec",
+    #'min_count':5,
+    'batch_size':4048,
+    'num_negs':5,
+    'iterations':1,
+    'num_workers':7,
+    'collate_fn':'custom',
+    'iprint':10000,
+    'n_chunk':20,
+    'input_embedding_dim':128,
+    'ns_exponent':0.75,
+    'initial_lr':0.01,
+#   optimizer_name='sparse_dense_adam',
+    'optimizer_name':'sparse_adam',
+    'single_layer':True,
+    'sparse':True,
+    'lr_schedule':False,
+    'test':False,
+    'save_embedding':True,
+    'save_item_embedding':False,
+    'w2v_mimic':False,
+    'page_word_stats_path':"wiki_data/page_word_stats.json",
+    'page_emb_to_word_emb_tensor_fname':"page_emb_to_word_emb_tensor.npz",
+    'use_cuda':True,
+    'page_min_count':50,
+    'testset_ratio':0.05,
+    'entity_type':'word',
+    'amp':False,
+    'title_category_trunc_len':30,
+    'dataload_only':False,
+    'title_only':False,
+    'normalize':False,
+    'temperature':1,
+    'two_tower':False,
+    'dataload_only': False,
+    'model_name': 'baseline',
+    'relu':True,
+}
+
+def parse_config(base_config_update):
+    actual_config_update = {}
+    config = BASE_CONFIG.copy()
+    for k,v in base_config_update.items():
+        if k not in BASE_CONFIG or BASE_CONFIG[k] != v:
+            actual_config_update[k] = v
+    if actual_config_update:
+        new_model_name = 'baseline'
+        for k, v in actual_config_update.items():
+            if isinstance(v, bool):
+                if v:
+                    new_model_name += f'_{k}'
+                else:
+                    new_model_name += f'_not_{k}'
+            else:
+                new_model_name += f"_{k}_{v}"
+        actual_config_update['model_name'] = new_model_name
+        config.update(actual_config_update)
+    return config
+
+def optimizer_to(optim, device):
+    if isinstance(optim, MultipleOptimizer):
+        optims = optim.optimizers
+    else:
+        optims = [optim]
+    
+    for op in optims:
+        for param in op.state.values():
+            # Not sure there are any global tensors in the state dict
+            if isinstance(param, torch.Tensor):
+                param.data = param.data.to(device)
+                if param._grad is not None:
+                    param._grad.data = param._grad.data.to(device)
+            elif isinstance(param, dict):
+                for subparam in param.values():
+                    if isinstance(subparam, torch.Tensor):
+                        subparam.data = subparam.data.to(device)
+                        if subparam._grad is not None:
+                            subparam._grad.data = subparam._grad.data.to(device)
 
 class WikiTrainer:
 
-    def __init__(self, hidden_dim1, item_embedding_dim, use_cuda, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
+    def __init__(self, hidden_dim1, item_embedding_dim, use_cuda, model_name, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
-                 optimizer='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
+                 optimizer_name='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
-                 dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False):
-        
+                 dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
+                 relu = True,
+                 ):
+
+
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:
             print('Using w2v mimic files for training...', flush=True)
@@ -37,10 +130,16 @@ class WikiTrainer:
         self.testset_ratio = testset_ratio
         self.amp = amp
         self.dataload_only = dataload_only
-        if test:
+        self.save_embedding = save_embedding
+        self.dense_lr_ratio = dense_lr_ratio
+        self.model_name = model_name
+
+        self.create_dir_structure()
+
+        if self.test:
             self.num_workers = 0
             n_chunk = 1
-            self.save_embedding = False
+    #        self.save_embedding = False
 
         # Initialize dataset, file_list set to None for now. Will update later.
         self.dataset = WikiDataset(file_list = None, compression = None, n_chunk = n_chunk, 
@@ -61,7 +160,7 @@ class WikiTrainer:
         else:
             self.corpus_size = len(self.dataset.word_frequency)
         self.input_embedding_dim = input_embedding_dim
-        self.save_embedding = save_embedding
+        
         self.save_item_embedding = save_item_embedding
         self.iprint = iprint
         self.batch_size = batch_size
@@ -70,6 +169,8 @@ class WikiTrainer:
         self.normalize = normalize
         self.temperature = temperature
         self.two_tower = two_tower
+        self.single_layer = single_layer
+        self.relu = relu
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
@@ -82,6 +183,7 @@ class WikiTrainer:
             'normalize':self.normalize,
             'temperature':self.temperature,
             'two_tower':self.two_tower,
+            'relu':self.relu,
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -90,7 +192,7 @@ class WikiTrainer:
         
         if warm_start_model is not None:
             self.model.load_state_dict(torch.load(warm_start_model), strict=False)
-        self.optimizer = optimizer
+        self.optimizer_name = optimizer_name
         if optimizer_kwargs is None:
             optimizer_kwargs = {}
         self.optimizer_kwargs = optimizer_kwargs
@@ -100,6 +202,12 @@ class WikiTrainer:
         if self.use_cuda:
             self.model.cuda()
 
+    def create_dir_structure(self):
+        self.prefix = f'wiki_data/experiments/{self.model_name}'
+        self.saved_embeddings_dir = f'{self.prefix}/wiki_embedding'
+        os.makedirs(self.prefix, exist_ok = True)
+        os.makedirs(self.saved_embeddings_dir, exist_ok = True)
+
     def train(self):
         # clearn GPU memory cache
         gc.collect()
@@ -107,37 +215,41 @@ class WikiTrainer:
 
         # self.final_lr = self.initial_lr
 
-        if self.optimizer == 'adam':
-            optimizer = optim.Adam(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
-        elif self.optimizer == 'sparse_adam':
-            optimizer = optim.SparseAdam(list(self.model.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-        elif self.optimizer == 'sparse_dense_adam':
+        # use sparse dense adam solver for non-single-layer network
+        if self.optimizer_name == 'sparse_adam' and not self.single_layer:
+            self.optimizer_name = 'sparse_dense_adam'
+
+        if self.optimizer_name == 'adam':
+            self.optimizer = optim.Adam(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+        elif self.optimizer_name == 'sparse_adam':
+            self.optimizer = optim.SparseAdam(list(self.model.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
+        elif self.optimizer_name == 'sparse_dense_adam':
             if self.model.two_tower:
                 opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight, self.model.linear1_item.weight, self.model.linear2_item.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                optimizer = MultipleOptimizer(opti_sparse, opti_dense)                
+                opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight, self.model.linear1_item.weight, self.model.linear2_item.weight], lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+                self.optimizer = MultipleOptimizer(opti_sparse, opti_dense)                
             else:
                 # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight, self.model.item_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
                 # opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight], lr=self.initial_lr, **self.optimizer_kwargs)
                 opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()) + list(self.model.item_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_dense = optim.Adam(list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-                optimizer = MultipleOptimizer(opti_sparse, opti_dense)
-        elif self.optimizer == 'sgd':
-            optimizer = optim.SGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
-        elif self.optimizer == 'asgd':
-            optimizer = optim.ASGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
-        elif self.optimizer == 'adagrad':
-            optimizer = optim.Adagrad(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
-        elif self.optimizer == 'rmsprop':
-            optimizer = optim.RMSprop(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+                opti_dense = optim.Adam(list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+                self.optimizer = MultipleOptimizer(opti_sparse, opti_dense)
+        elif self.optimizer_name == 'sgd':
+            self.optimizer = optim.SGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+        elif self.optimizer_name == 'asgd':
+            self.optimizer = optim.ASGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+        elif self.optimizer_name == 'adagrad':
+            self.optimizer = optim.Adagrad(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+        elif self.optimizer_name == 'rmsprop':
+            self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
         else:
             raise Exception('Unknown optimizer!')
 
         if self.lr_schedule:
             if self.optimizer == 'sparse_dense_adam':
-                scheduler = MultipleScheduler(optimizer, self.iterations)
+                scheduler = MultipleScheduler(self.optimizer, self.iterations)
             else:
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.iterations)
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, self.iterations)
         else:
             scheduler = None
         running_loss = 0.0
@@ -150,6 +262,8 @@ class WikiTrainer:
         num_train_files = int(len(self.file_handle_lists) * (1 - self.testset_ratio))
         self.file_handle_lists_train = self.file_handle_lists[:num_train_files]
         self.file_handle_lists_test = self.file_handle_lists[num_train_files:]
+
+        self.df_eval_list = []
 
         for iteration in range(self.iterations):
 
@@ -191,7 +305,7 @@ class WikiTrainer:
                 pos_v = sample_batched[1].to(self.device)
                 neg_v = sample_batched[2].to(self.device)
                 
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss = self.model.forward(pos_u, pos_v, neg_v)
                 # if self.amp:
                 #     scaler.scale(loss).backward()
@@ -199,7 +313,7 @@ class WikiTrainer:
                 #     scaler.update()
                 # else:
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
 
                 running_loss = running_loss * (1 - 5/iprint) + loss.item() * (5/iprint)
 
@@ -207,10 +321,10 @@ class WikiTrainer:
                 # start_time = time_now
                 if i > 0 and i % iprint == 0:
                     time_now = time.time()
-                    if self.optimizer == 'sparse_dense_adam':
-                        lr = [param_group['lr'] for param_group in optimizer.optimizers[0].param_groups]
+                    if self.optimizer_name == 'sparse_dense_adam':
+                        lr = [param_group['lr'] for param_group in self.optimizer.optimizers[0].param_groups]
                     else:
-                        lr = [param_group['lr'] for param_group in optimizer.param_groups]
+                        lr = [param_group['lr'] for param_group in self.optimizer.param_groups]
                     print(f" Loss: {running_loss} lr: {lr}"
                         f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
                     )
@@ -220,31 +334,47 @@ class WikiTrainer:
             print(i)
             if self.lr_schedule:
                 scheduler.step()
-            print(" Loss: " + str(running_loss))
-            if self.save_embedding:
-                path = path_decoration(f'wiki_data/wiki_embedding/embedding_iter_{iteration}_{self.entity_type}.npz', self.w2v_mimic)
-                self.do_save_embedding(path, save_item_embedding=self.save_item_embedding)
+            print(f" Loss: {running_loss}")
 
-        #self.skip_gram_model.save_embedding(self.data.id2word, self.output_file_name)
+            # saving embeddings per epoch
+            path = path_decoration(f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz', self.w2v_mimic)
+            self.do_save_embedding(path)
+            df_eval = (
+                self.eval_model(iter_num = iteration)
+                .pivot(index = 'iter_num', columns = 'k', values = 'recall')
+                .assign(loss = running_loss)
+            )
+            self.df_eval_list.append(df_eval)
+            torch.cuda.empty_cache()
+
+        # # saving embeddings after all epochs
+        # path = path_decoration(f'{self.saved_embeddings_dir}/embedding_{self.entity_type}.npz', self.w2v_mimic)
+        # self.do_save_embedding(path)
+
+        # show recall evaluation
+        df_result = pd.concat(self.df_eval_list)[['loss', 10, 50, 100, 300]]
+        df_result.to_csv(f'{self.prefix}/eval_result.tsv', sep = '\t')
+        display(df_result)
+        self.save_train_config()
+        #self.save_model()
+
+    def save_train_config(self):
+        trainer_config = self.__dict__
+        with open(f'{self.prefix}/trainer_config.json', 'w') as f:
+            f.write(json.dumps(trainer_config, default=lambda o: '<not serializable>', indent=4))
+
+    def do_save_embedding(self, path):       
+        output_dict = self.prep_embedding_output()
         if self.save_embedding:
-            path = path_decoration(f'wiki_data/wiki_embedding/embedding_{self.entity_type}.npz', self.w2v_mimic)
-            self.do_save_embedding(path, save_item_embedding=self.save_item_embedding)
-
-    def do_save_embedding(self, path, save_item_embedding=True):
-        print('Saving embeddings...', flush=True)
-
-
+            print('Saving embeddings...', flush=True)
+            torch.save(output_dict, path)
+    
+    def prep_embedding_output(self):
         output_dict = {
             'entity_type':self.entity_type,
             'model_init_kwargs': self.model_init_kwargs,
             'model_state_dict': self.model.state_dict(),
-#            'user_embeddings':self.model.forward_to_user_embedding_layer(torch.LongTensor(range(self.model.corpus_size)).to(self.device), in_chunks = True).cpu().data.numpy(),
         }
-
-        # if self.model.two_tower:
-        #     output_dict['item_embeddings'] = self.model.forward_to_user_embedding_layer(torch.LongTensor(range(self.model.corpus_size)).to(self.device), in_chunks = True, user_tower = False).cpu().data.numpy(),
-        # else:
-        #     output_dict['item_embeddings'] = self.model.item_embeddings.weight.cpu().data.numpy()
 
         if self.entity_type == 'page':
             output_dict['emb2page_over_threshold'] = self.dataset.emb2page_over_threshold
@@ -252,13 +382,66 @@ class WikiTrainer:
             output_dict['emb2word'] = self.dataset.emb2word
             output_dict['page_emb_to_word_emb_tensor'] = self.dataset.page_emb_to_word_emb_tensor
             output_dict['emb2page'] = self.dataset.emb2page
-        torch.save(output_dict, path)
+        
+        return output_dict
 
     def save_model(self, fname = 'trained_model'):
-        path = path_decoration(f'wiki_data/saved_trained_model/{fname}_{self.entity_type}.npz', self.w2v_mimic)
+        path = path_decoration(f'{self.prefix}/{fname}_{self.entity_type}.npz', self.w2v_mimic)
         # set iterator to None to avoid pickle error on generator
         self.dataset.chunk_iterator = None
         torch.save(self, path)
+    
+    def eval_model(self, iter_num, quick = True):
+        df_links_test = pd.concat(list(read_files_in_chunks(self.file_handle_lists_test, compression='gz', 
+                                                       n_chunk = 10, progress_bar = True)))
+        if quick:
+            df_links_test = df_links_test.iloc[:100000]
+        
+        df_page = read_page_data(w2v_mimic = self.w2v_mimic)
+
+        self.model.cpu()
+        # torch.save(self.optimizer.state_dict(), '/tmp/optimizer_state_dict_cache.pkl')
+        # optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location='cpu')
+        # self.optimizer.load_state_dict(optimizer_state_dict)
+
+        embedding_output_dict = self.prep_embedding_output()
+        optimizer_to(self.optimizer, 'cpu')
+
+        gc.collect()
+        torch.cuda.empty_cache()
+        start = time.time()
+
+        df_embedding, nn = build_knn(
+            emb_file=embedding_output_dict, 
+            df_page=df_page, w2v_mimic=self.w2v_mimic, emb_name="item_embedding", 
+            algorithm='faiss', device = 'gpu'
+        )
+        del embedding_output_dict
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # self.model.to(self.device)
+        # self.model = OneTower(**embedding_output_dict['model_init_kwargs'])
+        # self.model.load_state_dict(embedding_output_dict['model_state_dict'])
+        start_1 = time.time()
+        print('compute recall...', flush = True)
+        df_ret = (
+            compute_recall(df_links_test, df_embedding, nn, [10, 50, 100, 300],use_user_emb = True)
+            .assign(iter_num = iter_num)
+        )
+        del nn
+
+        gc.collect()
+        torch.cuda.empty_cache()
+        if self.use_cuda:
+            self.model.cuda()
+        optimizer_to(self.optimizer, self.device)
+        # optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location=self.device)
+        # self.optimizer.load_state_dict(optimizer_state_dict)
+
+        end = time.time()
+        print(f"nn training time is {start_1 - start}, recall evaluation time is {end - start_1}")
+        return df_ret
     
     @classmethod
     def load_model(cls, fname, w2v_mimic, entity_type):
@@ -278,6 +461,10 @@ class MultipleOptimizer(optim.Optimizer):
     def step(self):
         for op in self.optimizers:
             op.step()
+
+    def to(self, device):
+        for op in self.optimizers:
+            optimizer_to(op, device)
 
 
 class MultipleScheduler(object):
