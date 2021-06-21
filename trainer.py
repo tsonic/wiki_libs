@@ -20,6 +20,7 @@ import numpy as np
 import time
 import os
 import json
+from collections import defaultdict
 
 BASE_CONFIG = {
     'hidden_dim1':128, 
@@ -365,7 +366,7 @@ class WikiTrainer:
         df_result.to_csv(f'{self.prefix}/eval_result.tsv', sep = '\t')
         display(df_result)
         self.save_train_config()
-        #self.save_model()
+        self.save_model()
 
     def save_train_config(self):
         trainer_config = self.__dict__
@@ -408,13 +409,19 @@ class WikiTrainer:
         
         df_page = read_page_data(w2v_mimic = self.w2v_mimic)
 
-        self.model.cpu()
+        
         # torch.save(self.optimizer.state_dict(), '/tmp/optimizer_state_dict_cache.pkl')
         # optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location='cpu')
         # self.optimizer.load_state_dict(optimizer_state_dict)
 
+        if is_colab():
+            torch.save(self.optimizer.state_dict(), '/tmp/optimizer_state_dict_cache.pkl')
+            self.optimizer.__setstate__({'state': defaultdict(dict)})
+        else:
+            self.model.cpu()
+            optimizer_to(self.optimizer, 'cpu')
+
         embedding_output_dict = self.prep_embedding_output()
-        optimizer_to(self.optimizer, 'cpu')
 
         gc.collect()
         torch.cuda.empty_cache()
@@ -429,6 +436,9 @@ class WikiTrainer:
         gc.collect()
         torch.cuda.empty_cache()
 
+
+
+
         # self.model.to(self.device)
         # self.model = OneTower(**embedding_output_dict['model_init_kwargs'])
         # self.model.load_state_dict(embedding_output_dict['model_state_dict'])
@@ -442,11 +452,13 @@ class WikiTrainer:
 
         gc.collect()
         torch.cuda.empty_cache()
-        if self.use_cuda:
-            self.model.cuda()
-        optimizer_to(self.optimizer, self.device)
-        # optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location=self.device)
-        # self.optimizer.load_state_dict(optimizer_state_dict)
+        if is_colab():
+            optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location=self.device)
+            self.optimizer.load_state_dict(optimizer_state_dict)
+        else:
+            if self.use_cuda:
+                self.model.cuda()
+            optimizer_to(self.optimizer, self.device)
 
         end = time.time()
         print(f"nn training time is {start_1 - start}, recall evaluation time is {end - start_1}")
@@ -454,7 +466,7 @@ class WikiTrainer:
     
     @classmethod
     def load_model(cls, fname, w2v_mimic, entity_type):
-        path = path_decoration(f'wiki_data/saved_trained_model/{fname}_{entity_type}.npz', w2v_mimic)
+        path = path_decoration(f'wiki_data/{fname}_{entity_type}.npz', w2v_mimic)
         return torch.load(path, map_location = 'cpu')
 
 
