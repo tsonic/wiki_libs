@@ -445,8 +445,7 @@ class WikiTrainer:
             compute_recall(df_links_test, df_embedding, nn, [10, 50, 100, 300],use_user_emb = True)
             .assign(iter_num = iter_num)
         )
-        del nn
-
+        del nn, df_embedding
         gc.collect()
         torch.cuda.empty_cache()
         if is_colab():

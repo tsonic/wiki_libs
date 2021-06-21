@@ -67,9 +67,9 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
 
     df_embedding = (
         pd.DataFrame({
-            'user_embedding':list(user_embedding), 
+            #'user_embedding':list(user_embedding), 
             'user_embedding_normalized':list(normalize(user_embedding)), 
-            'item_embedding':list(item_embedding), 
+            #'item_embedding':list(item_embedding), 
             'item_embedding_normalized':list(normalize(item_embedding)), 
             }, index = index)
         .merge(
