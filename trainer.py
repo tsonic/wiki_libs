@@ -112,7 +112,7 @@ class WikiTrainer:
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
-                 relu = True,
+                 relu = True, random_seed = 0
                  ):
 
 
@@ -344,7 +344,9 @@ class WikiTrainer:
             print(f" Loss: {running_loss}")
 
             # saving embeddings per epoch
-            path = path_decoration(f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz', self.w2v_mimic)
+            path = f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz'
+            if self.w2v_mimic:
+                path = convert_to_w2v_mimic_path(path)
             self.do_save_embedding(path)
             df_eval = (
                 self.eval_model(iter_num = iteration)
@@ -370,7 +372,7 @@ class WikiTrainer:
         with open(f'{self.prefix}/trainer_config.json', 'w') as f:
             f.write(json.dumps(trainer_config, default=lambda o: '<not serializable>', indent=4))
 
-    def do_save_embedding(self, path):       
+    def do_save_embedding(self, path):    
         output_dict = self.prep_embedding_output()
         if self.save_embedding:
             print('Saving embeddings...', flush=True)
