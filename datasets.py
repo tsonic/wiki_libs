@@ -104,6 +104,8 @@ class WikiDataset(torch.utils.data.IterableDataset):
             if page_emb_to_word_emb_tensor_fname is not None:
                 # load tensor from cached
                 path = f'wiki_data/{page_emb_to_word_emb_tensor_fname}'
+                if is_colab():
+                    path = convert_to_colab_path(path)
                 if self.title_only:
                     path = append_suffix_to_fname(path, '_title_only')
                 self.page_emb_to_word_emb_tensor = torch.load(path, map_location = 'cpu')
