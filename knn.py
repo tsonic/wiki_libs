@@ -67,10 +67,10 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
 
     df_embedding = (
         pd.DataFrame({
-            #'user_embedding':list(user_embedding), 
-            'user_embedding_normalized':list(normalize(user_embedding)), 
-            #'item_embedding':list(item_embedding), 
-            'item_embedding_normalized':list(normalize(item_embedding)), 
+            'user_embedding':list(user_embedding), 
+            #'user_embedding_normalized':list(normalize(user_embedding)), 
+            'item_embedding':list(item_embedding), 
+            #'item_embedding_normalized':list(normalize(item_embedding)), 
             }, index = index)
         .merge(
             df_page.drop_duplicates('page_id')
@@ -89,7 +89,7 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
         nn = FaissKNeighbors(n_neighbors=k, device=device)
     else:
         nn = NearestNeighbors(n_neighbors=k, algorithm=algorithm, leaf_size=100, n_jobs=-1, p=2)
-    nn.fit(np.vstack(df_embedding[emb_name + "_normalized"]))
+    nn.fit(normalize(np.vstack(df_embedding[emb_name])))
     return df_embedding, nn
 
 def top_k(inputs, nn, df_embedding,  k, input_type = 'index', output_type = 'index',
