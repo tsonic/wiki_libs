@@ -366,7 +366,7 @@ class WikiTrainer:
         df_result.to_csv(f'{self.prefix}/eval_result.tsv', sep = '\t')
         display(df_result)
         self.save_train_config()
-        self.save_model()
+        #self.save_model()
 
     def save_train_config(self):
         trainer_config = self.__dict__
