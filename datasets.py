@@ -52,23 +52,9 @@ class WikiDataset(torch.utils.data.IterableDataset):
         else:
             entity_frequency = page_word_stats.word_frequency
             self.min_count = self.word_min_count
-            # self.title_category_transformed_dict = (
-            #     get_df_title_category_transformed(
-            #         read_cached=not self.build_transformed_title_category,
-            #         ngram_model_name=ngram_model_name)
-            #     .assign(page_title_category_transformed = lambda df: 
-            #             df['page_title_category_transformed'].apply(lambda x: [self.entity2emb[e] for e in x]))
-            #     .set_index('page_id')
-            #     ['page_title_category_transformed']
-            #     .to_dict()
-            # )
-
-            
-            #print(f'finish loading title category transformed, size {len(self.title_category_transformed_dict)}', flush = True)
 
         if self.entity_type == 'page':
             self.truncate_tail_page = True
-
         else:
             self.truncate_tail_page = False
 

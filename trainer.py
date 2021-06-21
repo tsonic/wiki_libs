@@ -436,9 +436,6 @@ class WikiTrainer:
         gc.collect()
         torch.cuda.empty_cache()
 
-
-
-
         # self.model.to(self.device)
         # self.model = OneTower(**embedding_output_dict['model_init_kwargs'])
         # self.model.load_state_dict(embedding_output_dict['model_state_dict'])

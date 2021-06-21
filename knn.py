@@ -5,6 +5,8 @@ from sklearn.neighbors import KDTree, NearestNeighbors
 import pandas as pd
 import json
 import numpy as np
+import pdb
+import gc
 
 try:
     import faiss
@@ -77,6 +79,10 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
             left_index = True, right_on = 'page_id')
         .set_index('page_title')
     )
+    del user_embedding, item_embedding, model
+    gc.collect()
+    torch.cuda.empty_cache()
+
     
     #kdt = KDTree(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]), leaf_size=100, metric='euclidean')
     if algorithm == "faiss":
