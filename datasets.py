@@ -1,6 +1,11 @@
 import torch
 import pandas as pd
-from wiki_libs.preprocessing import read_files_in_chunks, read_category_links, process_title, path_decoration, read_page_data, append_suffix_to_fname 
+from wiki_libs.preprocessing import (
+        read_files_in_chunks, read_category_links, 
+        process_title, path_decoration, 
+        read_page_data, append_suffix_to_fname,
+        is_colab, convert_to_colab_path
+    )
 from wiki_libs.ngram import NGRAM_MODEL_PATH_PREFIX, load_ngram_model, get_df_title_category_transformed, transform_ngram
 import numpy as np
 
@@ -130,6 +135,8 @@ class WikiDataset(torch.utils.data.IterableDataset):
                 
                 et = time.time()
                 path = f'wiki_data/page_emb_to_word_emb_tensor.npz'
+                if is_colab():
+                    path = convert_to_colab_path(path)
                 if self.title_only:
                     path = append_suffix_to_fname(path, '_title_only')
                 print(f'Finish generating page_emb_to_word_emb_tensor, took {et - st}', flush = True)

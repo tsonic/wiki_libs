@@ -86,17 +86,22 @@ class OneTower(nn.Module):
                 return output
 
         else:
-            emb_item = embedding_lookup_func(self.item_embeddings, pos_input)
-            if self.single_layer or not self.two_tower:
-                return emb_item
+            if self.two_tower:
+                emb_item = embedding_lookup_func(self.input_embeddings, pos_input)
+                if self.single_layer:
+                    return emb_item
+                else:
+                    h1 = self.linear1_item(emb_item)
+                    if self.relu:
+                        h1 = F.relu(h1)
+                    output = self.linear2_item(h1)
+                    if self.relu:
+                        output = F.relu(output)
+                    return output
             else:
-                h1 = self.linear1_item(emb_item)
-                if self.relu:
-                    h1 = F.relu(h1)
-                output = self.linear2_item(h1)
-                if self.relu:
-                    output = F.relu(output)
-                return output
+                emb_item = embedding_lookup_func(self.item_embeddings, pos_input)
+                return emb_item
+                
 
 
     def forward(self, pos_input, pos_item, neg_item):

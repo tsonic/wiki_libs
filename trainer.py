@@ -10,7 +10,8 @@ from wiki_libs.knn import build_knn
 import torch.optim as optim
 from wiki_libs.preprocessing import (
     convert_to_w2v_mimic_path, get_files_in_dir, path_decoration, 
-    LINK_PAIRS_LOCATION, read_files_in_chunks, read_page_data
+    LINK_PAIRS_LOCATION, read_files_in_chunks, read_page_data, is_colab,
+    convert_to_colab_path
 )
 from torch.utils.data import DataLoader
 from functools import partial
@@ -60,6 +61,7 @@ BASE_CONFIG = {
     'dataload_only': False,
     'model_name': 'baseline',
     'relu':True,
+    'dense_lr_ratio':0.1,
 }
 
 def parse_config(base_config_update):
@@ -203,7 +205,12 @@ class WikiTrainer:
             self.model.cuda()
 
     def create_dir_structure(self):
-        self.prefix = f'wiki_data/experiments/{self.model_name}'
+        if self.test:
+            self.prefix = f'wiki_data/experiments/test/{self.model_name}'
+        else:
+            self.prefix = f'wiki_data/experiments/{self.model_name}'
+        if is_colab():
+            self.prefix = convert_to_colab_path(self.prefix)
         self.saved_embeddings_dir = f'{self.prefix}/wiki_embedding'
         os.makedirs(self.prefix, exist_ok = True)
         os.makedirs(self.saved_embeddings_dir, exist_ok = True)

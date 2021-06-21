@@ -13,6 +13,9 @@ import sys
 def is_colab():
     return 'google.colab' in sys.modules
 
+def convert_to_colab_path(path):
+    return '/content/gdrive/MyDrive/Projects with Wei/' + path
+
 CATEGORY_LINKS_LOCATION = 'wiki_data/categorylinks_page_merged.zip'
 PAGE_DATA_LOCATION = 'wiki_data/page_data.tsv'
 LINK_PAIRS_LOCATION = 'wiki_data/link_pairs_shuffled_gz'
