@@ -8,35 +8,30 @@ import numpy as np
 import pdb
 import gc
 
-try:
-    import faiss
+import faiss
 
+class FaissKNeighbors:
+    def __init__(self, n_neighbors=5, device = 'cpu'):
+        self.index = None
+        self.y = None
+        self.n_neighbors = n_neighbors
+        self.device = device
 
-    class FaissKNeighbors:
-        def __init__(self, n_neighbors=5, device = 'cpu'):
-            self.index = None
-            self.y = None
-            self.n_neighbors = n_neighbors
-            self.device = device
+    def fit(self, X):
 
-        def fit(self, X):
+        res = faiss.StandardGpuResources()
+        self.index = faiss.IndexFlatL2(X.shape[1])
+        if self.device == 'gpu':
+            self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+        self.index.add(X.astype(np.float32))
 
-            res = faiss.StandardGpuResources()
-            self.index = faiss.IndexFlatL2(X.shape[1])
-            if self.device == 'gpu':
-                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
-            self.index.add(X.astype(np.float32))
-
-        def kneighbors(self, X, n_neighbors = None, return_distance = False):
-            if n_neighbors is None:
-                n_neighbors = self.n_neighbors
-            distances, indices = self.index.search(X.astype(np.float32), k=n_neighbors)
-            if not return_distance:
-                return indices
-            return distances, indices
-except:
-    pass
-
+    def kneighbors(self, X, n_neighbors = None, return_distance = False):
+        if n_neighbors is None:
+            n_neighbors = self.n_neighbors
+        distances, indices = self.index.search(X.astype(np.float32), k=n_neighbors)
+        if not return_distance:
+            return indices
+        return distances, indices
 
 def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorithm = 'brute', k = 10, device = 'cpu'):
     if isinstance(emb_file, str):
