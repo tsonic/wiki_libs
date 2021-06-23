@@ -353,7 +353,9 @@ class WikiTrainer:
                 self.eval_model(iter_num = iteration)
                 .pivot(index = 'iter_num', columns = 'k', values = 'recall')
                 .assign(loss = running_loss)
+                [['loss', 10, 50, 100, 300]]
             )
+            display(df_eval)
             self.df_eval_list.append(df_eval)
             torch.cuda.empty_cache()
 
@@ -362,7 +364,7 @@ class WikiTrainer:
         # self.do_save_embedding(path)
 
         # show recall evaluation
-        df_result = pd.concat(self.df_eval_list)[['loss', 10, 50, 100, 300]]
+        df_result = pd.concat(self.df_eval_list)
         df_result.to_csv(f'{self.prefix}/eval_result.tsv', sep = '\t')
         display(df_result)
         self.save_train_config()
