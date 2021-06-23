@@ -344,11 +344,13 @@ class WikiTrainer:
                 scheduler.step()
             print(f" Loss: {running_loss}")
 
-            # saving embeddings per epoch
-            path = f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz'
-            if self.w2v_mimic:
-                path = convert_to_w2v_mimic_path(path)
-            self.do_save_embedding(path)
+            # saving embeddings per epoch if running locally
+            if not is_colab():
+                path = f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz'
+                if self.w2v_mimic:
+                    path = convert_to_w2v_mimic_path(path)
+                    self.do_save_embedding(path)
+            
             df_eval = (
                 self.eval_model(iter_num = iteration)
                 .pivot(index = 'iter_num', columns = 'k', values = 'recall')
