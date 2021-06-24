@@ -358,6 +358,7 @@ class WikiTrainer:
                 [['loss', 10, 50, 100, 300]]
             )
             display(df_eval)
+            df_eval.to_csv(f'{self.prefix}/eval_result_iter_{iteration}.tsv', sep = '\t')
             self.df_eval_list.append(df_eval)
             torch.cuda.empty_cache()
 
