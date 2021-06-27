@@ -347,11 +347,11 @@ class WikiTrainer:
                     )
                     self.writer.add_scalar('train loss', running_loss, 'training instances', total_training_instances)
                     if not self.single_layer:
-                        self.writer.add_histogram('linear1', self.model.linear1.weight, total_training_instances)
-                        self.writer.add_histogram('linear2', self.model.linear2.weight, total_training_instances)
+                        self.writer.add_histogram('linear1', self.model.linear1.weight.detach().numpy(), total_training_instances)
+                        self.writer.add_histogram('linear2', self.model.linear2.weight.detach().numpy(), total_training_instances)
                         if self.two_tower:
-                            self.writer.add_histogram('linear1', self.model.linear1_item.weight, total_training_instances)
-                            self.writer.add_histogram('linear2', self.model.linear2_item.weight, total_training_instances)
+                            self.writer.add_histogram('linear1_itme', self.model.linear1_item.weight.detach().numpy(), total_training_instances)
+                            self.writer.add_histogram('linear2_item', self.model.linear2_item.weight.detach().numpy(), total_training_instances)
                     prev_time = time_now
                     prev_i = i
 
