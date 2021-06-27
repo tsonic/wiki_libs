@@ -486,15 +486,15 @@ class WikiTrainer:
         self.writer.add_scalar('train loss', running_loss, total_training_instances)
         if not self.single_layer:
             self.writer.add_histogram('linear1', self.model.linear1.weight.detach().cpu().numpy(), total_training_instances)
-            self.writer.add_histogram('linear1_diagnol', self.model.linear1.weight.detach().cpu().numpy().diagnol(), total_training_instances)
+            self.writer.add_histogram('linear1_diagonal', self.model.linear1.weight.detach().cpu().numpy().diagonal(), total_training_instances)
             self.writer.add_histogram('linear2', self.model.linear2.weight.detach().cpu().numpy(), total_training_instances)
-            self.writer.add_histogram('linear2_diagnol', self.model.linear2.weight.detach().cpu().numpy().diagnol(), total_training_instances)
+            self.writer.add_histogram('linear2_diagonal', self.model.linear2.weight.detach().cpu().numpy().diagonal(), total_training_instances)
             if self.two_tower:
                 self.writer.add_histogram('linear1_itme', self.model.linear1_item.weight.detach().numpy(), total_training_instances)
-                self.writer.add_histogram('linear1_itme_diagnol', self.model.linear1_item.weight.detach().numpy().diagnol(), total_training_instances)
+                self.writer.add_histogram('linear1_itme_diagonal', self.model.linear1_item.weight.detach().numpy().diagonal(), total_training_instances)
 
                 self.writer.add_histogram('linear2_item', self.model.linear2_item.weight.detach().numpy(), total_training_instances)
-                self.writer.add_histogram('linear2_item_diagnol', self.model.linear2_item.weight.detach().numpy().diagnol(), total_training_instances)
+                self.writer.add_histogram('linear2_item_diagonal', self.model.linear2_item.weight.detach().numpy().diagonal(), total_training_instances)
 
 
 class MultipleOptimizer(optim.Optimizer):
