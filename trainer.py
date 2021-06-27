@@ -210,15 +210,17 @@ class WikiTrainer:
             self.model.cuda()
 
     def create_dir_structure(self):
+        import shutil
         if self.test:
-            self.prefix = f'wiki_data/experiments/test/{self.model_name}'
+            self.prefix = f'wiki_data/test/{self.model_name}'
         else:
             self.prefix = f'wiki_data/experiments/{self.model_name}'
         if is_colab():
             self.prefix = convert_to_colab_path(self.prefix)
         self.saved_embeddings_dir = f'{self.prefix}/wiki_embedding'
-        os.makedirs(self.prefix, exist_ok = True)
-        os.makedirs(self.saved_embeddings_dir, exist_ok = True)
+        shutil.rmtree(self.prefix, ignore_errors=True)
+        os.makedirs(self.prefix, exist_ok = False)
+        os.makedirs(self.saved_embeddings_dir, exist_ok = False)
 
     def train(self):
         # clearn GPU memory cache
