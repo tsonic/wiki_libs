@@ -21,6 +21,7 @@ import time
 import os
 import json
 from collections import defaultdict
+from torch.utils.tensorboard import SummaryWriter
 
 BASE_CONFIG = {
     'hidden_dim1':128, 
@@ -63,6 +64,7 @@ BASE_CONFIG = {
     'model_name': 'baseline',
     'relu':True,
     'dense_lr_ratio':0.1,
+    'repeat':0,
 }
 
 def parse_config(base_config_update):
@@ -113,7 +115,7 @@ class WikiTrainer:
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
-                 relu = True, random_seed = 0
+                 relu = True, repeat = 0,
                  ):
 
 
@@ -138,6 +140,8 @@ class WikiTrainer:
         self.model_name = model_name
 
         self.create_dir_structure()
+
+        self.writer = SummaryWriter(f'{self.prefix}/tensorboard/')
 
         if self.test:
             self.num_workers = 0
@@ -262,6 +266,7 @@ class WikiTrainer:
             scheduler = None
         running_loss = 0.0
         running_batch_time = 0.0
+        total_training_instances = 0
 
         iprint = self.iprint #len(self.dataloader) // 20
 
@@ -272,6 +277,8 @@ class WikiTrainer:
         self.file_handle_lists_test = self.file_handle_lists[num_train_files:]
 
         self.df_eval_list = []
+
+
 
         for iteration in range(self.iterations):
 
@@ -323,7 +330,9 @@ class WikiTrainer:
                 loss.backward()
                 self.optimizer.step()
 
+                # roughly every iprint batches, running loss are flushed out 5 times
                 running_loss = running_loss * (1 - 5/iprint) + loss.item() * (5/iprint)
+                total_training_instances += sample_batched[0].shape[0]
 
                 # running_batch_time = running_batch_time * (1 - 5/iprint) + (time_now - start_time) * (5/iprint)
                 # start_time = time_now
@@ -336,6 +345,13 @@ class WikiTrainer:
                     print(f" Loss: {running_loss} lr: {lr}"
                         f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
                     )
+                    self.writer.add_scalar('train loss', running_loss, 'training instances', total_training_instances)
+                    if not self.single_layer:
+                        self.writer.add_histogram('linear1', self.model.linear1.weight, total_training_instances)
+                        self.writer.add_histogram('linear2', self.model.linear2.weight, total_training_instances)
+                        if self.two_tower:
+                            self.writer.add_histogram('linear1', self.model.linear1_item.weight, total_training_instances)
+                            self.writer.add_histogram('linear2', self.model.linear2_item.weight, total_training_instances)
                     prev_time = time_now
                     prev_i = i
 
@@ -369,6 +385,8 @@ class WikiTrainer:
         # show recall evaluation
         df_result = pd.concat(self.df_eval_list)
         df_result.to_csv(f'{self.prefix}/eval_result.tsv', sep = '\t')
+        self.writer.add_graph(self.model, [pos_u, pos_v, neg_v])
+        self.writer.close()
         display(df_result)
         self.save_train_config()
         #self.save_model()
