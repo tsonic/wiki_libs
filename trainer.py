@@ -345,7 +345,7 @@ class WikiTrainer:
                     print(f" Loss: {running_loss} lr: {lr}"
                         f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
                     )
-                    self.write_tensorboard_stats(self, running_loss, total_training_instances)
+                    self.write_tensorboard_stats(running_loss, total_training_instances)
                     prev_time = time_now
                     prev_i = i
 
@@ -353,7 +353,7 @@ class WikiTrainer:
             if self.lr_schedule:
                 scheduler.step()
             print(f" Loss: {running_loss}")
-            self.write_tensorboard_stats(self, running_loss, total_training_instances)
+            self.write_tensorboard_stats(running_loss, total_training_instances)
             # saving embeddings per epoch if running locally
             if not is_colab():
                 path = f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz'
