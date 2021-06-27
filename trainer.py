@@ -345,13 +345,7 @@ class WikiTrainer:
                     print(f" Loss: {running_loss} lr: {lr}"
                         f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
                     )
-                    self.writer.add_scalar('train loss', running_loss, 'training instances', total_training_instances)
-                    if not self.single_layer:
-                        self.writer.add_histogram('linear1', self.model.linear1.weight.detach().numpy(), total_training_instances)
-                        self.writer.add_histogram('linear2', self.model.linear2.weight.detach().numpy(), total_training_instances)
-                        if self.two_tower:
-                            self.writer.add_histogram('linear1_itme', self.model.linear1_item.weight.detach().numpy(), total_training_instances)
-                            self.writer.add_histogram('linear2_item', self.model.linear2_item.weight.detach().numpy(), total_training_instances)
+                    self.write_tensorboard_stats(self, running_loss, total_training_instances)
                     prev_time = time_now
                     prev_i = i
 
@@ -359,7 +353,7 @@ class WikiTrainer:
             if self.lr_schedule:
                 scheduler.step()
             print(f" Loss: {running_loss}")
-
+            self.write_tensorboard_stats(self, running_loss, total_training_instances)
             # saving embeddings per epoch if running locally
             if not is_colab():
                 path = f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz'
@@ -488,6 +482,14 @@ class WikiTrainer:
         path = path_decoration(f'wiki_data/{fname}_{entity_type}.npz', w2v_mimic)
         return torch.load(path, map_location = 'cpu')
 
+    def write_tensorboard_stats(self, running_loss, total_training_instances):
+        self.writer.add_scalar('train loss', running_loss, 'training instances', total_training_instances)
+        if not self.single_layer:
+            self.writer.add_histogram('linear1', self.model.linear1.weight.detach().numpy(), total_training_instances)
+            self.writer.add_histogram('linear2', self.model.linear2.weight.detach().numpy(), total_training_instances)
+            if self.two_tower:
+                self.writer.add_histogram('linear1_itme', self.model.linear1_item.weight.detach().numpy(), total_training_instances)
+                self.writer.add_histogram('linear2_item', self.model.linear2_item.weight.detach().numpy(), total_training_instances)
 
 
 class MultipleOptimizer(optim.Optimizer):
