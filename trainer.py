@@ -505,7 +505,12 @@ class MultipleOptimizer(optim.Optimizer):
     def to(self, device):
         for op in self.optimizers:
             optimizer_to(op, device)
+    def state_dict(self):
+        return [op.state_dict() for op in self.optimizers]
 
+    def load_state_dict(self, state_dicts):
+        for sd, op in zip(state_dicts, self.optimizers):
+            op.load_state_dict(sd)
 
 class MultipleScheduler(object):
     def __init__(self, optimizer, iter_num):
