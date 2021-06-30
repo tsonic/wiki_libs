@@ -182,6 +182,7 @@ class WikiTrainer:
         self.single_layer = single_layer
         self.relu = relu
         self.clamp = clamp
+        self.softmax = softmax
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
@@ -196,6 +197,7 @@ class WikiTrainer:
             'two_tower':self.two_tower,
             'relu':self.relu,
             'clamp':self.clamp,
+            'softmax':self.softmax,
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -377,6 +379,7 @@ class WikiTrainer:
             display(df_eval)
             df_eval.to_csv(f'{self.prefix}/eval_result_iter_{iteration}.tsv', sep = '\t')
             self.df_eval_list.append(df_eval)
+            gc.collect()
             torch.cuda.empty_cache()
 
         # # saving embeddings after all epochs
