@@ -7,7 +7,7 @@ import torch.nn.functional as F
 class OneTower(nn.Module):
     def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, 
                 item_embedding_dim, sparse, single_layer = False, entity_type = 'page', normalize = False,
-                temperature = 1, two_tower = False, relu = True,
+                temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False
                 ):
         super(OneTower, self).__init__()
         self.normalize = normalize
@@ -16,6 +16,8 @@ class OneTower(nn.Module):
         self.two_tower = two_tower
         self.corpus_size = corpus_size
         self.relu = relu
+        self.clamp = clamp
+        self.softmax = softmax
         if self.entity_type == 'page':
             self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
             if not self.two_tower:
@@ -120,12 +122,21 @@ class OneTower(nn.Module):
             emb_neg_item = F.normalize(emb_neg_item, p=2, dim=-1)
 
         score = torch.sum(torch.mul(emb_user, emb_item), dim=1) / self.temperature
-        score = torch.clamp(score, max=10, min=-10)
-        score = -F.logsigmoid(score)
+        score_copy = score
+        if self.clamp:
+            score = torch.clamp(score, max=10, min=-10)
+        if self.softmax:
+            score = -score
+        else:
+            score = -F.logsigmoid(score)
 
         neg_score = torch.bmm(emb_neg_item, emb_user.unsqueeze(2)).squeeze() / self.temperature
-        neg_score = torch.clamp(neg_score, max=10, min=-10)
-        neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
+        if self.clamp:
+            neg_score = torch.clamp(neg_score, max=10, min=-10)
+        if self.softmax:
+            neg_score = torch.logsumexp(torch.hstack([neg_score, score_copy.unsqueeze(-1)]), dim=1)
+        else:
+            neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
 
         return torch.mean(score + neg_score)   
 

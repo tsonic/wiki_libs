@@ -65,6 +65,8 @@ BASE_CONFIG = {
     'relu':True,
     'dense_lr_ratio':0.1,
     'repeat':0,
+    'clamp':True,
+    'softmax':False,
 }
 
 def parse_config(base_config_update):
@@ -115,7 +117,7 @@ class WikiTrainer:
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
-                 relu = True, repeat = 0,
+                 relu = True, repeat = 0, clamp = True, softmax = False
                  ):
 
 
@@ -138,6 +140,7 @@ class WikiTrainer:
         self.save_embedding = save_embedding
         self.dense_lr_ratio = dense_lr_ratio
         self.model_name = model_name
+
 
         self.create_dir_structure()
 
@@ -178,6 +181,7 @@ class WikiTrainer:
         self.two_tower = two_tower
         self.single_layer = single_layer
         self.relu = relu
+        self.clamp = clamp
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
@@ -191,6 +195,7 @@ class WikiTrainer:
             'temperature':self.temperature,
             'two_tower':self.two_tower,
             'relu':self.relu,
+            'clamp':self.clamp,
         }
         
         self.model = OneTower(**self.model_init_kwargs)
