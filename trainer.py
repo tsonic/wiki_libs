@@ -67,6 +67,7 @@ BASE_CONFIG = {
     'repeat':0,
     'clamp':True,
     'softmax':False,
+    'kaiming_init':False
 }
 
 def parse_config(base_config_update):
@@ -117,7 +118,7 @@ class WikiTrainer:
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
-                 relu = True, repeat = 0, clamp = True, softmax = False
+                 relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False
                  ):
 
 
@@ -143,8 +144,6 @@ class WikiTrainer:
 
 
         self.create_dir_structure()
-
-        self.writer = SummaryWriter(f'{self.prefix}/tensorboard/')
 
         if self.test:
             self.num_workers = 0
@@ -183,6 +182,7 @@ class WikiTrainer:
         self.relu = relu
         self.clamp = clamp
         self.softmax = softmax
+        self.kaiming_init = kaiming_init
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
@@ -198,6 +198,7 @@ class WikiTrainer:
             'relu':self.relu,
             'clamp':self.clamp,
             'softmax':self.softmax,
+            'kaiming_init':self.kaiming_init
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -237,6 +238,7 @@ class WikiTrainer:
         # self.final_lr = self.initial_lr
 
         # use sparse dense adam solver for non-single-layer network
+        # writer = SummaryWriter(f'{self.prefix}/tensorboard/')
         if self.optimizer_name == 'sparse_adam' and not self.single_layer:
             self.optimizer_name = 'sparse_dense_adam'
 
@@ -287,7 +289,8 @@ class WikiTrainer:
 
         self.df_eval_list = []
 
-
+        if self.amp:
+            scaler = torch.cuda.amp.GradScaler()
 
         for iteration in range(self.iterations):
 
@@ -315,8 +318,7 @@ class WikiTrainer:
                                      drop_last = True,
                                      pin_memory=True
                                     )
-            # if self.amp:
-            #     scaler = torch.cuda.amp.GradScaler()
+
             prev_time = time.time()
             prev_i = 0
             for i, sample_batched in enumerate(dataloader):
@@ -330,14 +332,21 @@ class WikiTrainer:
                 neg_v = sample_batched[2].to(self.device)
                 
                 self.optimizer.zero_grad()
-                loss = self.model.forward(pos_u, pos_v, neg_v)
-                # if self.amp:
-                #     scaler.scale(loss).backward()
-                #     scaler.step(optimizer)
-                #     scaler.update()
-                # else:
-                loss.backward()
-                self.optimizer.step()
+
+                if self.amp:
+                    with torch.cuda.amp.autocast():
+                        loss = self.model.forward(pos_u, pos_v, neg_v, i)
+                    scaler.scale(loss).backward()
+                    if isinstance(self.optimizer, MultipleOptimizer):
+                        for op in self.optimizer.optimizers:
+                            scaler.step(op)
+                    else:
+                        scaler.step(self.optimizer)
+                    scaler.update()
+                else:
+                    loss = self.model.forward(pos_u, pos_v, neg_v, i)
+                    loss.backward()
+                    self.optimizer.step()
 
                 # roughly every iprint batches, running loss are flushed out 5 times
                 running_loss = running_loss * (1 - 5/iprint) + loss.item() * (5/iprint)
@@ -354,7 +363,7 @@ class WikiTrainer:
                     print(f" Loss: {running_loss} lr: {lr}"
                         f" batch time = {(time_now - prev_time) / (i - prev_i)}" 
                     )
-                    self.write_tensorboard_stats(running_loss, total_training_instances)
+                    #self.write_tensorboard_stats(running_loss, total_training_instances)
                     prev_time = time_now
                     prev_i = i
 
@@ -362,7 +371,7 @@ class WikiTrainer:
             if self.lr_schedule:
                 scheduler.step()
             print(f" Loss: {running_loss}")
-            self.write_tensorboard_stats(running_loss, total_training_instances)
+            #self.write_tensorboard_stats(running_loss, total_training_instances)
             # saving embeddings per epoch if running locally
             if not is_colab():
                 path = f'{self.saved_embeddings_dir}/embedding_iter_{iteration}_{self.entity_type}.npz'
@@ -379,21 +388,23 @@ class WikiTrainer:
             display(df_eval)
             df_eval.to_csv(f'{self.prefix}/eval_result_iter_{iteration}.tsv', sep = '\t')
             self.df_eval_list.append(df_eval)
+
             gc.collect()
             torch.cuda.empty_cache()
 
         # # saving embeddings after all epochs
-        # path = path_decoration(f'{self.saved_embeddings_dir}/embedding_{self.entity_type}.npz', self.w2v_mimic)
-        # self.do_save_embedding(path)
+        path = path_decoration(f'{self.saved_embeddings_dir}/embedding_{self.entity_type}.npz', self.w2v_mimic)
+        self.do_save_embedding(path)
 
         # show recall evaluation
         df_result = pd.concat(self.df_eval_list)
         df_result.to_csv(f'{self.prefix}/eval_result.tsv', sep = '\t')
-        self.writer.add_graph(self.model, [pos_u, pos_v, neg_v])
-        self.writer.close()
+        #self.writer.add_graph(self.model, [pos_u, pos_v, neg_v])
+        #self.writer.close()
+        #self.writer = None
         display(df_result)
         self.save_train_config()
-        #self.save_model()
+        # self.save_model()
 
     def save_train_config(self):
         trainer_config = self.__dict__
@@ -506,6 +517,9 @@ class WikiTrainer:
                 self.writer.add_histogram('linear2_item', self.model.linear2_item.weight.detach().numpy(), total_training_instances)
                 self.writer.add_histogram('linear2_item_diagonal', self.model.linear2_item.weight.detach().numpy().diagonal(), total_training_instances)
 
+def train(config):
+    wt = WikiTrainer(**config)
+    wt.train()
 
 class MultipleOptimizer(optim.Optimizer):
     def __init__(self, *op):
