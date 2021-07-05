@@ -108,8 +108,8 @@ class OneTower(nn.Module):
                 ret = self.norm(ret)
                 ret = F.normalize(ret, p=2, dim=-1)
         else:
-            emb_item = embedding_lookup_func(self.input_embeddings, pos_input)
             if self.two_tower:
+                emb_item = embedding_lookup_func(self.input_embeddings, pos_input)
                 if self.single_layer:
                     ret = emb_item
                 else:
@@ -118,7 +118,7 @@ class OneTower(nn.Module):
                         h1 = F.relu(h1)
                     ret = self.linear2_item(h1)
             else:
-                ret = emb_item
+                ret = embedding_lookup_func(self.item_embeddings, pos_input)
             if self.normalize:
                 if self.relu:
                     ret = F.relu(ret)
