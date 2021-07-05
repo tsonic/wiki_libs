@@ -7,7 +7,7 @@ import torch.nn.functional as F
 class OneTower(nn.Module):
     def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, 
                 item_embedding_dim, sparse, single_layer = False, entity_type = 'page', normalize = False,
-                temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False
+                temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False, kaiming_init = False,
                 ):
         super(OneTower, self).__init__()
         self.normalize = normalize
@@ -34,12 +34,22 @@ class OneTower(nn.Module):
         if not self.single_layer:
             self.linear1 = nn.Linear(input_embedding_dim, hidden_dim1)
             self.linear2 = nn.Linear(hidden_dim1, item_embedding_dim)
+            if self.normalize:
+                # need to initiate all bias o 0, otherwise normalization will only retain bias information
+                self.norm = nn.Linear(item_embedding_dim, item_embedding_dim)
+                init.zeros_(self.norm.bias)
 
             if input_embedding_dim == hidden_dim1:
                 self.linear1.weight.data.copy_(torch.eye(input_embedding_dim))
                 self.linear2.weight.data.copy_(torch.eye(input_embedding_dim))
                 self.linear1.bias.data.copy_(torch.tensor(0))
                 self.linear2.bias.data.copy_(torch.tensor(0))
+            elif self.relu:
+                init.kaiming_normal_(self.linear1.weight.data, nonlinearity='relu')
+                init.kaiming_normal_(self.linear2.weight.data, nonlinearity='relu')
+            init.zeros_(self.linear1.bias)
+            init.zeros_(self.linear2.bias)
+
 
             # self.linear1.weight.requires_grad = False
             # self.linear1.bias.requires_grad = False
@@ -50,17 +60,26 @@ class OneTower(nn.Module):
             if self.two_tower:
                 self.linear1_item = nn.Linear(input_embedding_dim, hidden_dim1)
                 self.linear2_item = nn.Linear(hidden_dim1, item_embedding_dim)
+                init.zeros_(self.linear1_item.bias)
+                init.zeros_(self.linear2_item.bias)
+                if self.normalize:
+                    self.norm_item = nn.Linear(item_embedding_dim, item_embedding_dim)
+                    init.zeros_(self.norm_item.bias)
                 if input_embedding_dim == hidden_dim1:
                     self.linear1_item.weight.data.copy_(torch.eye(input_embedding_dim))
                     self.linear2_item.weight.data.copy_(torch.eye(input_embedding_dim))
                     self.linear1_item.data.copy_(torch.tensor(0))
                     self.linear2_item.data.copy_(torch.tensor(0))
+                elif self.relu:
+                    init.kaiming_normal_(self.linear1_item.weight.data, nonlinearity='relu')
+                    init.kaiming_normal_(self.linear2_item.weight.data, nonlinearity='relu')
+                    
 
         input_initrange = 1.0 / input_embedding_dim
-        init.uniform_(self.input_embeddings.weight.data, -input_initrange, input_initrange)
+        init.uniform_(self.input_embeddings.weight -input_initrange, input_initrange)
         if not self.two_tower:
             item_initrange = 1.0 / item_embedding_dim
-            init.uniform_(self.item_embeddings.weight.data, -item_initrange, item_initrange)
+            init.uniform_(self.item_embeddings.weight, -item_initrange, item_initrange)
 
         if self.entity_type == 'word':
             self.input_embeddings.weight.data[-1] = 0
@@ -77,36 +96,39 @@ class OneTower(nn.Module):
         if user_tower:
             emb_input = embedding_lookup_func(self.input_embeddings, pos_input)
             if self.single_layer:
-                return emb_input
+                ret = emb_input
             else:
                 h1 = self.linear1(emb_input)
                 if self.relu:
                     h1 = F.relu(h1)
-                output = F.relu(self.linear2(h1))
+                ret = self.linear2(h1)
+            if self.normalize:
                 if self.relu:
-                    output = F.relu(output)
-                return output
-
+                    ret = F.relu(ret)
+                ret = self.norm(ret)
+                ret = F.normalize(ret, p=2, dim=-1)
         else:
+            emb_item = embedding_lookup_func(self.input_embeddings, pos_input)
             if self.two_tower:
-                emb_item = embedding_lookup_func(self.input_embeddings, pos_input)
                 if self.single_layer:
-                    return emb_item
+                    ret = emb_item
                 else:
                     h1 = self.linear1_item(emb_item)
                     if self.relu:
                         h1 = F.relu(h1)
-                    output = self.linear2_item(h1)
-                    if self.relu:
-                        output = F.relu(output)
-                    return output
+                    ret = self.linear2_item(h1)
             else:
-                emb_item = embedding_lookup_func(self.item_embeddings, pos_input)
-                return emb_item
+                ret = emb_item
+            if self.normalize:
+                if self.relu:
+                    ret = F.relu(ret)
+                ret = self.norm_item(ret)
+                ret = F.normalize(ret, p=2, dim=-1)
+        return ret
                 
 
 
-    def forward(self, pos_input, pos_item, neg_item):
+    def forward(self, pos_input, pos_item, neg_item, i):
 
         emb_user = self.forward_to_user_embedding_layer(pos_input, user_tower=True)
 
@@ -116,10 +138,13 @@ class OneTower(nn.Module):
         # output embedding for negative instance
         emb_neg_item = self.forward_to_user_embedding_layer(neg_item, user_tower=False)
 
-        if self.normalize:
-            emb_user = F.normalize(emb_user, p=2, dim=-1)
-            emb_item = F.normalize(emb_item, p=2, dim=-1)
-            emb_neg_item = F.normalize(emb_neg_item, p=2, dim=-1)
+        # if i > 10000:
+        #     raise
+
+        # if self.normalize:
+        #     emb_user = F.normalize(emb_user, p=2, dim=-1)
+        #     emb_item = F.normalize(emb_item, p=2, dim=-1)
+        #     emb_neg_item = F.normalize(emb_neg_item, p=2, dim=-1)
 
         score = torch.sum(torch.mul(emb_user, emb_item), dim=1) / self.temperature
         score_copy = score
