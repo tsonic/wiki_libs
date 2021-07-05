@@ -393,8 +393,9 @@ class WikiTrainer:
             torch.cuda.empty_cache()
 
         # # saving embeddings after all epochs
-        path = path_decoration(f'{self.saved_embeddings_dir}/embedding_{self.entity_type}.npz', self.w2v_mimic)
-        self.do_save_embedding(path)
+        if not is_colab():
+            path = path_decoration(f'{self.saved_embeddings_dir}/embedding_{self.entity_type}.npz', self.w2v_mimic)
+            self.do_save_embedding(path)
 
         # show recall evaluation
         df_result = pd.concat(self.df_eval_list)
