@@ -3,6 +3,7 @@ import torch
 from torch.nn import init
 import torch.nn as nn
 import torch.nn.functional as F
+import gc
 
 class OneTower(nn.Module):
     def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, 
@@ -99,9 +100,14 @@ class OneTower(nn.Module):
                 ret = emb_input
             else:
                 h1 = self.linear1(emb_input)
+                del emb_input
+                gc.collect()
                 if self.relu:
                     h1 = F.relu(h1)
+
                 ret = self.linear2(h1)
+                del h1
+                gc.collect()
             if self.normalize:
                 if self.relu:
                     ret = F.relu(ret)
@@ -114,9 +120,13 @@ class OneTower(nn.Module):
                     ret = emb_item
                 else:
                     h1 = self.linear1_item(emb_item)
+                    del emb_item
+                    gc.collect()
                     if self.relu:
                         h1 = F.relu(h1)
                     ret = self.linear2_item(h1)
+                    del h1
+                    gc.collecT()
             else:
                 ret = embedding_lookup_func(self.item_embeddings, pos_input)
             if self.normalize:
