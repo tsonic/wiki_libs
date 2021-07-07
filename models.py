@@ -103,6 +103,7 @@ class OneTower(nn.Module):
             else:
                 h1 = self.linear1(emb_input)
                 if pos_input.shape[0] > gc_input_len:
+                    print(f'emb_input shape: {emb_input.shape}')
                     del emb_input
                     gc.collect()
                 if self.relu:
@@ -110,6 +111,7 @@ class OneTower(nn.Module):
 
                 ret = self.linear2(h1)
                 if pos_input.shape[0] > gc_input_len:
+                    print(f'h1 shape: {h1.shape}')
                     del h1
                     gc.collect()
             if self.normalize:
