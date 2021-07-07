@@ -87,62 +87,56 @@ class OneTower(nn.Module):
             if not self.two_tower:
                 self.item_embeddings.weight.data[-1] = 0
     
-    def forward_to_user_embedding_layer(self, pos_input, user_tower = True, in_chunks = False):
+    def forward_to_user_embedding_layer(self, pos_input, user_tower = True):
 
-        gc_input_len = 80_000
+        gc_input_len = 500_000
         # input embedding
-        if in_chunks:
-            embedding_lookup_func = self.embedding_lookup_n_chunk
-        else:
-            embedding_lookup_func = self.embedding_lookup
+        
+        chunks = torch.split(pos_input, gc_input_len)
 
-        if user_tower:
-            emb_input = embedding_lookup_func(self.input_embeddings, pos_input)
-            if self.single_layer:
-                ret = emb_input
-            else:
-                h1 = self.linear1(emb_input)
-                if pos_input.shape[0] > gc_input_len:
-                    print(f'emb_input shape: {emb_input.shape}', flush = True)
-                    del emb_input
-                    gc.collect()
-                if self.relu:
-                    h1 = F.relu(h1)
+        ret_list = []
 
-                ret = self.linear2(h1)
-                if pos_input.shape[0] > gc_input_len:
-                    print(f'h1 shape: {h1.shape}', flush = True)
-                    del h1
-                    gc.collect()
-            if self.normalize:
-                if self.relu:
-                    ret = F.relu(ret)
-                ret = self.norm(ret)
-                ret = F.normalize(ret, p=2, dim=-1)
-        else:
-            if self.two_tower:
-                emb_item = embedding_lookup_func(self.input_embeddings, pos_input)
+        for chunk in chunks:
+            if user_tower:
+                emb_input = self.embedding_lookup(self.input_embeddings, chunk)
                 if self.single_layer:
-                    ret = emb_item
+                    ret = emb_input
                 else:
-                    h1 = self.linear1_item(emb_item)
-                    if pos_input.shape[0] > gc_input_len:
-                        del emb_item
-                        gc.collect()
+                    h1 = self.linear1(emb_input)
                     if self.relu:
                         h1 = F.relu(h1)
-                    ret = self.linear2_item(h1)
-                    if pos_input.shape[0] > gc_input_len:
-                        del h1
-                        gc.collect()
+
+                    ret = self.linear2(h1)
+                if self.normalize:
+                    if self.relu:
+                        ret = F.relu(ret)
+                    ret = self.norm(ret)
+                    ret = F.normalize(ret, p=2, dim=-1)
             else:
-                ret = embedding_lookup_func(self.item_embeddings, pos_input)
-            if self.normalize:
-                if self.relu:
-                    ret = F.relu(ret)
-                ret = self.norm_item(ret)
-                ret = F.normalize(ret, p=2, dim=-1)
-        return ret
+                if self.two_tower:
+                    emb_item = self.embedding_lookup(self.input_embeddings, chunk)
+                    if self.single_layer:
+                        ret = emb_item
+                    else:
+                        h1 = self.linear1_item(emb_item)
+                        if pos_input.shape[0] > gc_input_len:
+                            del emb_item
+                            gc.collect()
+                        if self.relu:
+                            h1 = F.relu(h1)
+                        ret = self.linear2_item(h1)
+                else:
+                    ret = self.embedding_lookup(self.item_embeddings, chunk)
+                if self.normalize:
+                    if self.relu:
+                        ret = F.relu(ret)
+                    ret = self.norm_item(ret)
+                    ret = F.normalize(ret, p=2, dim=-1)
+            ret_list.append(ret)
+        if len(ret_list) == 1:
+            return ret_list[0]
+        else:
+            return torch.cat(ret_list)
                 
 
 
