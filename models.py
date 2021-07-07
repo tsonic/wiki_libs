@@ -126,7 +126,7 @@ class OneTower(nn.Module):
                         h1 = F.relu(h1)
                     ret = self.linear2_item(h1)
                     del h1
-                    gc.collecT()
+                    gc.collect()
             else:
                 ret = embedding_lookup_func(self.item_embeddings, pos_input)
             if self.normalize:
