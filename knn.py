@@ -78,11 +78,11 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
     
     #kdt = KDTree(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]), leaf_size=100, metric='euclidean')
     if algorithm == "faiss":
-        print('initializing FAISS')
+        print('initializing FAISS', flush = True)
         nn = FaissKNeighbors(n_neighbors=k, device=device)
     else:
         nn = NearestNeighbors(n_neighbors=k, algorithm=algorithm, leaf_size=100, n_jobs=-1, p=2)
-    print('fitting FAISS')
+    print('fitting FAISS', flush = True)
     nn.fit(normalize(np.vstack(df_embedding[emb_name])))
     return df_embedding, nn
 
