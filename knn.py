@@ -40,9 +40,6 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
     else:
         # emb_file can be the output_dict embedding object directly
         saved_embeddings = emb_file
-        
-    USER_ID = 'page_id'
-    ITEM_ID = 'page_id'
 
     if saved_embeddings['entity_type'] == "word":
         model = OneTower(**saved_embeddings['model_init_kwargs'])
@@ -81,9 +78,11 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
     
     #kdt = KDTree(np.vstack(df_embedding[f"{'user' if use_user_emb else 'item'}_embedding_normalized"]), leaf_size=100, metric='euclidean')
     if algorithm == "faiss":
+        print('initializing FAISS')
         nn = FaissKNeighbors(n_neighbors=k, device=device)
     else:
         nn = NearestNeighbors(n_neighbors=k, algorithm=algorithm, leaf_size=100, n_jobs=-1, p=2)
+    print('fitting FAISS')
     nn.fit(normalize(np.vstack(df_embedding[emb_name])))
     return df_embedding, nn
 
