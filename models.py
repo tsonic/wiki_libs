@@ -96,7 +96,7 @@ class OneTower(nn.Module):
 
         ret_list = []
 
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             if user_tower:
                 emb_input = self.embedding_lookup(self.input_embeddings, chunk)
                 if self.single_layer:
@@ -133,6 +133,9 @@ class OneTower(nn.Module):
                     ret = self.norm_item(ret)
                     ret = F.normalize(ret, p=2, dim=-1)
             ret_list.append(ret)
+            if (i > 1):
+                print('collect', flush = True)
+                gc.collect()
         if len(ret_list) == 1:
             return ret_list[0]
         else:
