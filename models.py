@@ -88,6 +88,8 @@ class OneTower(nn.Module):
                 self.item_embeddings.weight.data[-1] = 0
     
     def forward_to_user_embedding_layer(self, pos_input, user_tower = True, in_chunks = False):
+
+        gc_input_len = 100_000
         # input embedding
         if in_chunks:
             embedding_lookup_func = self.embedding_lookup_n_chunk
@@ -100,14 +102,16 @@ class OneTower(nn.Module):
                 ret = emb_input
             else:
                 h1 = self.linear1(emb_input)
-                del emb_input
-                gc.collect()
+                if pos_input.shape[0] > gc_input_len:
+                    del emb_input
+                    gc.collect()
                 if self.relu:
                     h1 = F.relu(h1)
 
                 ret = self.linear2(h1)
-                del h1
-                gc.collect()
+                if pos_input.shape[0] > gc_input_len:
+                    del h1
+                    gc.collect()
             if self.normalize:
                 if self.relu:
                     ret = F.relu(ret)
@@ -120,13 +124,15 @@ class OneTower(nn.Module):
                     ret = emb_item
                 else:
                     h1 = self.linear1_item(emb_item)
-                    del emb_item
-                    gc.collect()
+                    if pos_input.shape[0] > gc_input_len:
+                        del emb_item
+                        gc.collect()
                     if self.relu:
                         h1 = F.relu(h1)
                     ret = self.linear2_item(h1)
-                    del h1
-                    gc.collect()
+                    if pos_input.shape[0] > gc_input_len:
+                        del h1
+                        gc.collect()
             else:
                 ret = embedding_lookup_func(self.item_embeddings, pos_input)
             if self.normalize:
