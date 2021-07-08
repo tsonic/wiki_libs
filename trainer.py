@@ -456,6 +456,7 @@ class WikiTrainer:
         if is_colab():
             torch.save(self.optimizer.state_dict(), '/tmp/optimizer_state_dict_cache.pkl')
             self.optimizer.__setstate__({'state': defaultdict(dict)})
+            gc.collect()
         else:
             self.model.cpu()
             optimizer_to(self.optimizer, 'cpu')
