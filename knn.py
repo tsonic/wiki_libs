@@ -46,10 +46,13 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
         model.load_state_dict(saved_embeddings['model_state_dict'])
 
         page_emb_to_word_emb_tensor = saved_embeddings['page_emb_to_word_emb_tensor']
-
-        user_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor).detach().numpy()
-        item_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor, user_tower = False).detach().numpy()
+        model.eval()
+        with torch.no_grad():
+            user_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor).numpy()
+            item_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor, user_tower = False).numpy()
+            gc.collect()
         index = json.loads(str(saved_embeddings['emb2page']))
+        model.train()
     elif saved_embeddings['entity_type'] == "page":
         user_embedding = saved_embeddings['user_embeddings']
         item_embedding = saved_embeddings['item_embeddings']
