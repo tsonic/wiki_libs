@@ -87,7 +87,7 @@ class OneTower(nn.Module):
             if not self.two_tower:
                 self.item_embeddings.weight.data[-1] = 0
     
-    def forward_to_user_embedding_layer(self, pos_input, user_tower = True):
+    def forward_to_user_embedding_layer(self, pos_input, user_tower = True, force_cpu_output = False):
 
         gc_input_len = 500_000
         # input embedding
@@ -134,6 +134,8 @@ class OneTower(nn.Module):
                         ret = F.relu(ret)
                     ret = self.norm_item(ret)
                     ret = F.normalize(ret, p=2, dim=-1)
+            if force_cpu_output and ret.is_cuda:
+                ret = ret.cpu()
             ret_list.append(ret)
             if (i > 1):
                 print('collect', flush = True)
