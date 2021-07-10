@@ -24,9 +24,9 @@ class OneTower(nn.Module):
             if not self.two_tower:
                 self.item_embeddings = nn.Embedding(corpus_size, item_embedding_dim, sparse=sparse)
         else:
-            self.input_embeddings = nn.Embedding(corpus_size + 1, input_embedding_dim, sparse=sparse, padding_idx=-1)
+            self.input_embeddings = nn.EmbeddingBag(corpus_size + 1, input_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
             if not self.two_tower:
-                self.item_embeddings = nn.Embedding(corpus_size + 1, item_embedding_dim, sparse=sparse, padding_idx=-1)
+                self.item_embeddings = nn.EmbeddingBag(corpus_size + 1, item_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
         self.single_layer = single_layer
 
         print(f'single_layer is {self.single_layer}')
@@ -157,7 +157,10 @@ class OneTower(nn.Module):
         emb_item = self.forward_to_user_embedding_layer(pos_item, user_tower=False)
 
         # output embedding for negative instance
+        neg_item_shape = neg_item.shape
+        neg_item = neg_item.reshape(neg_item_shape[0] * neg_item_shape[1], neg_item.shape[2])
         emb_neg_item = self.forward_to_user_embedding_layer(neg_item, user_tower=False)
+        emb_neg_item = emb_neg_item.reshape(neg_item_shape[0], neg_item_shape[1], emb_neg_item.shape[-1])
 
         # if i > 10000:
         #     raise
@@ -194,7 +197,7 @@ class OneTower(nn.Module):
             # mean pooling
             select = (embed_index != embedding.padding_idx)
             sentence_emb_input = embedding(embed_index)
-            emb_input = sentence_emb_input.sum(axis = -2) / select.sum(axis = -1).unsqueeze(-1)
+            emb_input = sentence_emb_input / select.sum(axis = -1).unsqueeze(-1)
         
         return emb_input
         
