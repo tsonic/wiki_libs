@@ -100,6 +100,7 @@ class OneTower(nn.Module):
             if next(self.parameters()).is_cuda and not chunk.is_cuda:
                 print('send chunk to cuda', flush = True)
                 chunk = chunk.to('cuda')
+                print('chunk shape')
             if user_tower:
                 emb_input = self.embedding_lookup(self.input_embeddings, chunk)
                 if self.single_layer:
