@@ -42,10 +42,16 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
         saved_embeddings = emb_file
 
     if saved_embeddings['entity_type'] == "word":
-        model = OneTower(**saved_embeddings['model_init_kwargs'])
-        model.load_state_dict(saved_embeddings['model_state_dict'])
+        if 'model' in saved_embeddings:
+            print('found model passed in', flush = True)
+            model = saved_embeddings['model']
+            print(f'pass in model in cuda: {next(model.parameters()).is_cuda}')
+        else:
+            model = OneTower(**saved_embeddings['model_init_kwargs'])
+            model.load_state_dict(saved_embeddings['model_state_dict'])
 
         page_emb_to_word_emb_tensor = saved_embeddings['page_emb_to_word_emb_tensor']
+        print(f'loaded model in cuda: {next(model.parameters()).is_cuda}')
         model.eval()
         with torch.no_grad():
             user_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor).numpy()

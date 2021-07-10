@@ -97,6 +97,8 @@ class OneTower(nn.Module):
         ret_list = []
 
         for i, chunk in enumerate(chunks):
+            if next(self.parameters()).is_cuda and not chunk.is_cuda:
+                chunk = chunk.to('cuda')
             if user_tower:
                 emb_input = self.embedding_lookup(self.input_embeddings, chunk)
                 if self.single_layer:

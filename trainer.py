@@ -453,6 +453,8 @@ class WikiTrainer:
         # optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location='cpu')
         # self.optimizer.load_state_dict(optimizer_state_dict)
 
+        print(f'self.model in cuda: {next(self.model.parameters()).is_cuda}')
+
         if is_colab():
             torch.save(self.optimizer.state_dict(), '/tmp/optimizer_state_dict_cache.pkl')
             self.optimizer.__setstate__({'state': defaultdict(dict)})
@@ -462,6 +464,7 @@ class WikiTrainer:
             optimizer_to(self.optimizer, 'cpu')
 
         embedding_output_dict = self.prep_embedding_output()
+        embedding_output_dict['model'] = self.model
 
         gc.collect()
         torch.cuda.empty_cache()
