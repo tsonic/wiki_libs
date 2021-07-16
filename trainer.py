@@ -67,7 +67,9 @@ BASE_CONFIG = {
     'repeat':0,
     'clamp':True,
     'softmax':False,
-    'kaiming_init':False
+    'kaiming_init':False,
+    'quick_eval':True,
+    'stats_column':'both',
 }
 
 def parse_config(base_config_update):
@@ -118,7 +120,7 @@ class WikiTrainer:
                  sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
-                 relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False
+                 relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
                  ):
 
 
@@ -126,7 +128,7 @@ class WikiTrainer:
         if self.w2v_mimic:
             print('Using w2v mimic files for training...', flush=True)
 
-        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic, title_only = title_only)
+        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic, title_only = title_only, stats_column=stats_column)
 
         self.timeout = timeout
         self.test = test
@@ -141,6 +143,7 @@ class WikiTrainer:
         self.save_embedding = save_embedding
         self.dense_lr_ratio = dense_lr_ratio
         self.model_name = model_name
+        self.quick_eval = quick_eval
 
 
         self.create_dir_structure()
@@ -440,10 +443,10 @@ class WikiTrainer:
         self.dataset.chunk_iterator = None
         torch.save(self, path)
     
-    def eval_model(self, iter_num, quick = True):
+    def eval_model(self, iter_num):
         df_links_test = pd.concat(list(read_files_in_chunks(self.file_handle_lists_test, compression='gz', 
                                                        n_chunk = 10, progress_bar = True)))
-        if quick:
+        if self.quick_eval:
             df_links_test = df_links_test.iloc[:100000]
         
         df_page = read_page_data(w2v_mimic = self.w2v_mimic)

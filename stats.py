@@ -13,9 +13,14 @@ class PageWordStats(object):
                  w2v_mimic = False,
                  json_str = None,
                  title_only = False,
+                 stats_column = 'both',
                  ):
 
         if read_path is not None:
+            if stats_column == 'source':
+                read_path = append_suffix_to_fname(read_path, '_source')
+            elif stats_column == 'target':
+                read_path = append_suffix_to_fname(read_path, '_target')
             read_path = path_decoration(read_path, w2v_mimic)
             if title_only:
                 read_path = append_suffix_to_fname(read_path, '_title_only')
@@ -32,7 +37,14 @@ class PageWordStats(object):
             print('generating page id stats...')
             s_page = []
             for df_chunk in gen:
-                val_counts = df_chunk['page_id_target'].append(df_chunk['page_id_source']).value_counts()
+                if stats_column == 'both':
+                    val_counts = df_chunk['page_id_target'].append(df_chunk['page_id_source']).value_counts()
+                elif stats_column == 'source':
+                    val_counts = df_chunk['page_id_source'].value_counts()
+                elif stats_column == 'target':
+                    val_counts = df_chunk['page_id_target'].value_counts()
+                else:
+                    raise Exception(f'Unknown stats_columns: "{stats_column}"')
                 s_page.append(val_counts)
             df_stats = (
                 pd.concat(s_page)
@@ -64,6 +76,10 @@ class PageWordStats(object):
                 )
             # word_frequency is a list, where ith element is the word frequency of word with embedding id i.
             self.word_frequency = {w:c for w, c in s_words.iteritems()}
+            if stats_column == 'source':
+                output_path = append_suffix_to_fname(output_path, '_source')
+            elif stats_column == 'target':
+                output_path = append_suffix_to_fname(output_path, '_target')
 
             output_path = path_decoration(output_path, w2v_mimic)
             if title_only:

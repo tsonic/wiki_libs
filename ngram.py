@@ -4,13 +4,13 @@ import itertools
 import ast
 import json
 import numpy as np
-from gensim.models.phrases import Phrases, Phraser
+from gensim.models.phrases import Phrases, Phraser, ENGLISH_CONNECTOR_WORDS
 from wiki_libs.preprocessing import read_category_links, process_title, path_decoration, read_page_data
 
 
 NGRAM_MODEL_PATH_PREFIX = "wiki_data/ngram_model/"
 def train_phraser(sentences, min_count=5):
-    return Phraser(Phrases(sentences, min_count=min_count, delimiter=b'_'))
+    return Phraser(Phrases(sentences, min_count=min_count, delimiter='_', connector_words=ENGLISH_CONNECTOR_WORDS))
 
 def train_ngram(sentences, n=3, min_count=5, out_file='ngram_model.pickle'):
     ngram_model = []
@@ -47,7 +47,7 @@ def get_df_title_category_transformed(read_cached = True,
                                         title_only = False):
     path = path_decoration(f'wiki_data/{fname}', w2v_mimic=False)
     if read_cached:
-        df_title_category_transformed = pd.read_parquet(path, columns = ['page_id','page_title_category_transformed'])
+        df_title_category_transformed = pd.read_parquet(path, columns = ['page_id','page_title_category_transformed'], engine = 'pyarrow')
         return df_title_category_transformed
 
     ngram_model = load_ngram_model(NGRAM_MODEL_PATH_PREFIX + ngram_model_name)
