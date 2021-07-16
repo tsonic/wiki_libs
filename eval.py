@@ -54,10 +54,11 @@ def compute_recall(df_links, df_embedding, nn, k_list, use_user_emb = True):
                 pos_keys = None, neg_keys = None, use_user_emb = use_user_emb)
         df_nn = pd.DataFrame({'page_id_source': chunk, 'nn': list(ind)})
         df_merged = df_links.merge(df_nn, on = 'page_id_source')
-        res_list.append(pd.concat([(df_merged['page_id_target'].values[:,np.newaxis] == np.vstack(df_merged['nn'])[:,:k])
-                        .any(axis = 1).to_frame('recall')
-                        .assign(k = k) for k in k_list])
-                        )
+        res_list.append(pd.concat([pd.DataFrame(
+            {
+                'k':k, 
+                'recall':(df_merged['page_id_target'].values[:,np.newaxis] == np.vstack(df_merged['nn'])[:,:k]).any(axis = 1)
+            }) for k in k_list]))
     return pd.concat(res_list).groupby('k', as_index = False)['recall'].mean()
 
 
