@@ -47,20 +47,19 @@ def compute_recall(df_links, df_embedding, nn, k_list, use_user_emb = True):
     if isinstance(k_list, int):
         k_list = [k_list]
     k_max = max(k_list)
-    dist_list = []
-    ind_list = []
+
+    res_list = []
     for chunk in all_page_ids_chunks:
         dist, ind = top_k(chunk, nn, df_embedding, k_max, input_type = 'page_id', output_type = 'page_id',
                 pos_keys = None, neg_keys = None, use_user_emb = use_user_emb)
-        dist_list.extend(dist)
-        ind_list.extend(ind)
-    df_nn = pd.DataFrame({'page_id_source': all_page_ids, 'nn': ind_list})
-    df_merged = df_links.merge(df_nn, on = 'page_id_source')
-    return pd.DataFrame({
-        'k': k_list,
-        'recall': [(df_merged['page_id_target'].values[:,np.newaxis] == np.vstack(df_merged['nn'])[:,:k])
-                    .any(axis = 1).mean() for k in k_list]
-    })
+        df_nn = pd.DataFrame({'page_id_source': chunk, 'nn': list(ind)})
+        df_merged = df_links.merge(df_nn, on = 'page_id_source')
+        res_list.append(pd.concat([(df_merged['page_id_target'].values[:,np.newaxis] == np.vstack(df_merged['nn'])[:,:k])
+                        .any(axis = 1).to_frame('recall')
+                        .assign(k = k) for k in k_list])
+                        )
+    return pd.concat(res_list).groupby('k', as_index = False)['recall'].mean()
+
 
     
     
