@@ -40,12 +40,21 @@ def find_words_from_title(word, trained_model, df_page):
 
 def compute_recall(df_links, df_embedding, nn, k_list, use_user_emb = True):
     all_page_ids = df_links['page_id_source'].unique().tolist()
+    if len(all_page_ids) > 100_000:
+        all_page_ids_chunks = np.array_split(all_page_ids, len(all_page_ids) / 100_000)
+    else:
+        all_page_ids_chunks = [all_page_ids]
     if isinstance(k_list, int):
         k_list = [k_list]
     k_max = max(k_list)
-    dist, ind = top_k(all_page_ids, nn, df_embedding, k_max, input_type = 'page_id', output_type = 'page_id',
-             pos_keys = None, neg_keys = None, use_user_emb = use_user_emb)
-    df_nn = pd.DataFrame({'page_id_source': all_page_ids, 'nn': list(ind)})
+    dist_list = []
+    ind_list = []
+    for chunk in all_page_ids_chunks:
+        dist, ind = top_k(chunk, nn, df_embedding, k_max, input_type = 'page_id', output_type = 'page_id',
+                pos_keys = None, neg_keys = None, use_user_emb = use_user_emb)
+        dist_list.extend(dist)
+        ind_list.extend(ind)
+    df_nn = pd.DataFrame({'page_id_source': all_page_ids, 'nn': ind_list})
     df_merged = df_links.merge(df_nn, on = 'page_id_source')
     return pd.DataFrame({
         'k': k_list,
