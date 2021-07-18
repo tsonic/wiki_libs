@@ -70,6 +70,8 @@ BASE_CONFIG = {
     'kaiming_init':False,
     'quick_eval':True,
     'stats_column':'both',
+    'torch_seed':0,
+    'np_seed':0,
 }
 
 def parse_config(base_config_update):
@@ -121,8 +123,11 @@ class WikiTrainer:
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
+                 torch_seed = 0, np_seed = 0,
                  ):
 
+        torch.manual_seed(torch_seed)
+        np.random.seed(np_seed)
 
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:

@@ -98,9 +98,7 @@ class OneTower(nn.Module):
 
         for i, chunk in enumerate(chunks):
             if next(self.parameters()).is_cuda and not chunk.is_cuda:
-                print('send chunk to cuda', flush = True)
                 chunk = chunk.to('cuda')
-                print(f'chunk shape{chunk.shape}')
             if user_tower:
                 emb_input = self.embedding_lookup(self.input_embeddings, chunk)
                 if self.single_layer:
@@ -139,9 +137,6 @@ class OneTower(nn.Module):
             if force_cpu_output and ret.is_cuda:
                 ret = ret.cpu()
             ret_list.append(ret)
-            if (i > 1):
-                print('collect', flush = True)
-                gc.collect()
         if len(ret_list) == 1:
             return ret_list[0]
         else:

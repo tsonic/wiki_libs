@@ -57,6 +57,7 @@ def build_knn(emb_file, df_page, w2v_mimic, emb_name = 'item_embedding', algorit
             user_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor, force_cpu_output = True).numpy()
             item_embedding = model.forward_to_user_embedding_layer(page_emb_to_word_emb_tensor, user_tower = False, force_cpu_output = True).numpy()
             gc.collect()
+        print(f'generated embeddings for all word/pages', flush = True)
         index = json.loads(str(saved_embeddings['emb2page']))
         model.train()
     elif saved_embeddings['entity_type'] == "page":

@@ -10,7 +10,6 @@ from wiki_libs.ngram import NGRAM_MODEL_PATH_PREFIX, load_ngram_model, get_df_ti
 import numpy as np
 
 
-NEGATIVE_TABLE_SIZE = 1e8
 class WikiDataset(torch.utils.data.IterableDataset):
     'Characterizes a dataset for PyTorch'
     def __init__(self, file_list, compression, n_chunk, num_negs, page_word_stats, ns_exponent, w2v_mimic,
@@ -23,6 +22,10 @@ class WikiDataset(torch.utils.data.IterableDataset):
         # self.list_IDs = list_IDs
         # if isinstance(file_list, str):
         #     file_list = [file_list]
+
+
+        # torch.use_deterministic_algorithms(True)
+
         self.file_list = file_list
         self.compression = compression
         self.n_chunk = n_chunk
@@ -35,8 +38,6 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.ngram_model_name = ngram_model_name
         self.build_transformed_title_category = page_emb_to_word_emb_tensor_fname is None
 
-        self.negatives = []
-        self.negpos = 0
         self.num_negs = num_negs
         self.page_word_stats = page_word_stats
 
@@ -174,15 +175,15 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.pos += 1
         return ret
 
-    def getNegatives(self, target, size):  # TODO check equality with target
-        response = self.negatives[self.negpos:self.negpos + size]
+    def getNegatives(self, target, shape):  # TODO check equality with target
         # reshuffle negative table if negpos > total neg table size.
-        if (self.negpos + size) // len(self.negatives) >= 1:
-            np.random.shuffle(self.negatives)
-        self.negpos = (self.negpos + size) % len(self.negatives)
-        if len(response) != size:
-            return np.concatenate((response, self.negatives[0:self.negpos]))
-        return response
+        # if (self.negpos + size) // len(self.negatives) >= 1:
+        #     np.random.shuffle(self.negatives)
+        # self.negpos = (self.negpos + size) % len(self.negatives)
+        # if len(response) != size:
+        #     return np.concatenate((response, self.negatives[0:self.negpos]))
+
+        return np.random.choice(len(self.neg_sample_prob), size = shape, replace = True, p = self.neg_sample_prob)
 
     def initTableNegatives(self, ns_exponent):
         print('Initializing negative samples', flush=True)
@@ -190,22 +191,28 @@ class WikiDataset(torch.utils.data.IterableDataset):
         use_page_negative = True
         if self.entity_type == 'word' and use_page_negative:
             #################### May need to convert to page embedding
-            page_id, page_counts = zip(*self.page_frequency.items())
-            ratio = np.array(page_counts).astype(np.float64) ** ns_exponent / sum(page_counts)
-            sampled_count = np.round(ratio * NEGATIVE_TABLE_SIZE).astype(np.int64)
-            page_emb = [self.page2emb[p] for p in page_id]
-            self.negatives = np.repeat(page_emb, sampled_count)
+            # page_id, page_counts = zip(*self.page_frequency.items())
+            # ratio = np.array(page_counts).astype(np.float64) ** ns_exponent / sum(page_counts)
+            # sampled_count = np.round(ratio * NEGATIVE_TABLE_SIZE).astype(np.int64)
+            # page_emb = [self.page2emb[p] for p in page_id]
+            # self.negatives = np.repeat(page_emb, sampled_count)
+
+            self.neg_sample_prob = np.array([self.page_frequency[e] for e in self.emb2page]).astype(np.float32)
+            self.neg_sample_prob = self.neg_sample_prob ** ns_exponent
+            self.neg_sample_prob = self.neg_sample_prob / self.neg_sample_prob.sum()
         else:
             ## entity_count already uses embedding index
-            entity_counts = [self.entity_frequency_over_threshold[entity_id] for entity_id in self.emb2entity_over_threshold]
-            ratio = np.array(entity_counts).astype(np.float64) ** ns_exponent / sum(entity_counts)
-            sampled_count = np.round(ratio * NEGATIVE_TABLE_SIZE).astype(np.int64)
-            self.negatives = np.repeat(range(len(sampled_count)), sampled_count)
+            # entity_counts = [self.entity_frequency_over_threshold[entity_id] for entity_id in self.emb2entity_over_threshold]
+            # ratio = np.array(entity_counts).astype(np.float64) ** ns_exponent / sum(entity_counts)
+            # sampled_count = np.round(ratio * NEGATIVE_TABLE_SIZE).astype(np.int64)
+            # self.negatives = np.repeat(range(len(sampled_count)), sampled_count)
 
-        np.random.shuffle(self.negatives)
+            self.neg_sample_prob = np.array([self.entity_frequency_over_threshold[e] for e in self.emb2entity_over_threshold]).astype(np.float32)
+            self.neg_sample_prob = self.neg_sample_prob ** ns_exponent
+            self.neg_sample_prob = self.neg_sample_prob / self.neg_sample_prob.sum()
 
     def collate(self,batches):
-        negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
+        negs = self.getNegatives(None, (len(batches), self.num_negs))
         id_list, positive_list = zip(*batches)
         ####### input are page embedding index, instead of page id.
         pos_u = torch.LongTensor(id_list)
@@ -226,5 +233,4 @@ class WikiDataset(torch.utils.data.IterableDataset):
         new_seed = np.random.get_state()[1][0] + worker_id
 
         np.random.seed(new_seed) 
-        np.random.shuffle(dataset.negatives)
         dataset.file_list = file_handle_lists[worker_id]
