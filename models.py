@@ -48,7 +48,8 @@ class OneTower(nn.Module):
             if self.relu and self.kaiming_init:
                 init.kaiming_normal_(self.linear1.weight, nonlinearity='relu')
                 init.kaiming_normal_(self.linear2.weight, nonlinearity='relu')
-                init.kaiming_normal_(self.norm.weight, nonlinearity='relu')
+                # do not initialize norm layer without activation with kaiming
+                # init.kaiming_normal_(self.norm.weight, nonlinearity='relu')
 
 
 
@@ -70,7 +71,8 @@ class OneTower(nn.Module):
                 if self.relu and self.kaiming_init:
                     init.kaiming_normal_(self.linear1_item.weight, nonlinearity='relu')
                     init.kaiming_normal_(self.linear2_item.weight, nonlinearity='relu')
-                    init.kaiming_normal_(self.norm_item.weight, nonlinearity='relu')
+                    # do not initialize norm layer without activation with kaiming
+                    # init.kaiming_normal_(self.norm_item.weight, nonlinearity='relu')
 
                     
 
