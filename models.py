@@ -19,6 +19,9 @@ class OneTower(nn.Module):
         self.relu = relu
         self.clamp = clamp
         self.softmax = softmax
+
+        self.kaiming_init = kaiming_init
+
         if self.entity_type == 'page':
             self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
             if not self.two_tower:
@@ -45,7 +48,7 @@ class OneTower(nn.Module):
                 self.linear2.weight.data.copy_(torch.eye(input_embedding_dim))
                 self.linear1.bias.data.copy_(torch.tensor(0))
                 self.linear2.bias.data.copy_(torch.tensor(0))
-            elif self.relu:
+            elif self.relu and self.kaiming_init:
                 init.kaiming_normal_(self.linear1.weight.data, nonlinearity='relu')
                 init.kaiming_normal_(self.linear2.weight.data, nonlinearity='relu')
             init.zeros_(self.linear1.bias)
@@ -71,7 +74,7 @@ class OneTower(nn.Module):
                     self.linear2_item.weight.data.copy_(torch.eye(input_embedding_dim))
                     self.linear1_item.data.copy_(torch.tensor(0))
                     self.linear2_item.data.copy_(torch.tensor(0))
-                elif self.relu:
+                elif self.relu and self.kaiming_init:
                     init.kaiming_normal_(self.linear1_item.weight.data, nonlinearity='relu')
                     init.kaiming_normal_(self.linear2_item.weight.data, nonlinearity='relu')
                     
