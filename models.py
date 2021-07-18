@@ -38,21 +38,19 @@ class OneTower(nn.Module):
         if not self.single_layer:
             self.linear1 = nn.Linear(input_embedding_dim, hidden_dim1)
             self.linear2 = nn.Linear(hidden_dim1, item_embedding_dim)
+            init.zeros_(self.linear1.bias)
+            init.zeros_(self.linear2.bias)
             if self.normalize:
                 # need to initiate all bias o 0, otherwise normalization will only retain bias information
                 self.norm = nn.Linear(item_embedding_dim, item_embedding_dim)
                 init.zeros_(self.norm.bias)
 
-            if input_embedding_dim == hidden_dim1:
-                self.linear1.weight.data.copy_(torch.eye(input_embedding_dim))
-                self.linear2.weight.data.copy_(torch.eye(input_embedding_dim))
-                self.linear1.bias.data.copy_(torch.tensor(0))
-                self.linear2.bias.data.copy_(torch.tensor(0))
-            elif self.relu and self.kaiming_init:
-                init.kaiming_normal_(self.linear1.weight.data, nonlinearity='relu')
-                init.kaiming_normal_(self.linear2.weight.data, nonlinearity='relu')
-            init.zeros_(self.linear1.bias)
-            init.zeros_(self.linear2.bias)
+            if self.relu and self.kaiming_init:
+                init.kaiming_normal_(self.linear1.weight, nonlinearity='relu')
+                init.kaiming_normal_(self.linear2.weight, nonlinearity='relu')
+                init.kaiming_normal_(self.norm.weight, nonlinearity='relu')
+
+
 
 
             # self.linear1.weight.requires_grad = False
@@ -69,14 +67,11 @@ class OneTower(nn.Module):
                 if self.normalize:
                     self.norm_item = nn.Linear(item_embedding_dim, item_embedding_dim)
                     init.zeros_(self.norm_item.bias)
-                if input_embedding_dim == hidden_dim1:
-                    self.linear1_item.weight.data.copy_(torch.eye(input_embedding_dim))
-                    self.linear2_item.weight.data.copy_(torch.eye(input_embedding_dim))
-                    self.linear1_item.data.copy_(torch.tensor(0))
-                    self.linear2_item.data.copy_(torch.tensor(0))
-                elif self.relu and self.kaiming_init:
-                    init.kaiming_normal_(self.linear1_item.weight.data, nonlinearity='relu')
-                    init.kaiming_normal_(self.linear2_item.weight.data, nonlinearity='relu')
+                if self.relu and self.kaiming_init:
+                    init.kaiming_normal_(self.linear1_item.weight, nonlinearity='relu')
+                    init.kaiming_normal_(self.linear2_item.weight, nonlinearity='relu')
+                    init.kaiming_normal_(self.norm_item.weight, nonlinearity='relu')
+
                     
 
         input_initrange = 1.0 / input_embedding_dim
