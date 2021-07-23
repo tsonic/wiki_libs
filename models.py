@@ -9,6 +9,7 @@ class OneTower(nn.Module):
     def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, 
                 item_embedding_dim, sparse, single_layer = False, entity_type = 'page', normalize = False,
                 temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False, kaiming_init = False,
+                last_layer_relu = False, 
                 ):
         super(OneTower, self).__init__()
         self.normalize = normalize
@@ -21,6 +22,7 @@ class OneTower(nn.Module):
         self.softmax = softmax
 
         self.kaiming_init = kaiming_init
+        self.last_layer_relu = last_layer_relu
 
         if self.entity_type == 'page':
             self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
@@ -40,10 +42,6 @@ class OneTower(nn.Module):
             self.linear2 = nn.Linear(hidden_dim1, item_embedding_dim)
             init.zeros_(self.linear1.bias)
             init.zeros_(self.linear2.bias)
-            if self.normalize:
-                # need to initiate all bias o 0, otherwise normalization will only retain bias information
-                self.norm = nn.Linear(item_embedding_dim, item_embedding_dim)
-                init.zeros_(self.norm.bias)
 
             if self.relu and self.kaiming_init:
                 init.kaiming_normal_(self.linear1.weight, nonlinearity='relu')
@@ -65,9 +63,7 @@ class OneTower(nn.Module):
                 self.linear2_item = nn.Linear(hidden_dim1, item_embedding_dim)
                 init.zeros_(self.linear1_item.bias)
                 init.zeros_(self.linear2_item.bias)
-                if self.normalize:
-                    self.norm_item = nn.Linear(item_embedding_dim, item_embedding_dim)
-                    init.zeros_(self.norm_item.bias)
+
                 if self.relu and self.kaiming_init:
                     init.kaiming_normal_(self.linear1_item.weight, nonlinearity='relu')
                     init.kaiming_normal_(self.linear2_item.weight, nonlinearity='relu')
@@ -77,7 +73,7 @@ class OneTower(nn.Module):
                     
 
         input_initrange = 1.0 / input_embedding_dim
-        init.uniform_(self.input_embeddings.weight -input_initrange, input_initrange)
+        init.uniform_(self.input_embeddings.weight, -input_initrange, input_initrange)
         if not self.two_tower:
             item_initrange = 1.0 / item_embedding_dim
             init.uniform_(self.item_embeddings.weight, -item_initrange, item_initrange)
@@ -109,11 +105,6 @@ class OneTower(nn.Module):
                         h1 = F.relu(h1)
 
                     ret = self.linear2(h1)
-                if self.normalize:
-                    if self.relu:
-                        ret = F.relu(ret)
-                    ret = self.norm(ret)
-                    ret = F.normalize(ret, p=2, dim=-1)
             else:
                 if self.two_tower:
                     emb_item = self.embedding_lookup(self.input_embeddings, chunk)
@@ -129,11 +120,10 @@ class OneTower(nn.Module):
                         ret = self.linear2_item(h1)
                 else:
                     ret = self.embedding_lookup(self.item_embeddings, chunk)
-                if self.normalize:
-                    if self.relu:
-                        ret = F.relu(ret)
-                    ret = self.norm_item(ret)
-                    ret = F.normalize(ret, p=2, dim=-1)
+            if self.last_layer_relu:
+                ret = F.relu(ret)
+            if self.normalize:
+                ret = F.normalize(ret, p=2, dim=-1)
             if force_cpu_output and ret.is_cuda:
                 ret = ret.cpu()
             ret_list.append(ret)
@@ -178,7 +168,9 @@ class OneTower(nn.Module):
         if self.clamp:
             neg_score = torch.clamp(neg_score, max=10, min=-10)
         if self.softmax:
+            raise
             neg_score = torch.logsumexp(torch.hstack([neg_score, score_copy.unsqueeze(-1)]), dim=1)
+
         else:
             neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
 

@@ -24,7 +24,7 @@ from collections import defaultdict
 from torch.utils.tensorboard import SummaryWriter
 
 BASE_CONFIG = {
-    'hidden_dim1':128, 
+    'hidden_dim1':512, 
     'item_embedding_dim':128, 
     #'output_file':"gdrive/My Drive/Projects with Wei/Wei_tmp_outputs/w2v_output/out.vec",
     #'min_count':5,
@@ -59,19 +59,20 @@ BASE_CONFIG = {
     'title_only':False,
     'normalize':False,
     'temperature':1,
-    'two_tower':False,
+    'two_tower':True,
     'dataload_only': False,
     'model_name': 'baseline',
     'relu':True,
     'dense_lr_ratio':0.1,
     'repeat':0,
-    'clamp':True,
+    'clamp':False,
     'softmax':False,
-    'kaiming_init':False,
+    'kaiming_init':True,
     'quick_eval':True,
     'stats_column':'both',
     'torch_seed':0,
     'np_seed':0,
+    'last_layer_relu':False,
 }
 
 def parse_config(base_config_update):
@@ -123,7 +124,7 @@ class WikiTrainer:
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
-                 torch_seed = 0, np_seed = 0,
+                 torch_seed = 0, np_seed = 0, last_layer_relu = False,
                  ):
 
         torch.manual_seed(torch_seed)
@@ -191,6 +192,7 @@ class WikiTrainer:
         self.clamp = clamp
         self.softmax = softmax
         self.kaiming_init = kaiming_init
+        self.last_layer_relu = last_layer_relu
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
@@ -206,7 +208,8 @@ class WikiTrainer:
             'relu':self.relu,
             'clamp':self.clamp,
             'softmax':self.softmax,
-            'kaiming_init':self.kaiming_init
+            'kaiming_init':self.kaiming_init,
+            'last_layer_relu':self.last_layer_relu,
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -255,16 +258,33 @@ class WikiTrainer:
         elif self.optimizer_name == 'sparse_adam':
             self.optimizer = optim.SparseAdam(list(self.model.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer_name == 'sparse_dense_adam':
+            ops = []
             if self.model.two_tower:
-                opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight, self.model.linear1_item.weight, self.model.linear2_item.weight], lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-                self.optimizer = MultipleOptimizer(opti_sparse, opti_dense)                
+                
+                opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
+                ops.append(opti_sparse)
+                if not self.single_layer:
+                    params_list = list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()) \
+                                + list(self.model.linear1_item.parameters()) + list(self.model.linear2_item.parameters()) \
+                                # + list(self.model.norm.parameters()) + list(self.model.norm_item.parameters()
+                    opti_dense = optim.Adam(params_list, lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+                    ops.append(opti_dense)
+                # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
+                # opti_dense = optim.Adam(
+                #             [self.model.linear1.weight, self.model.linear2.weight,
+                #              self.model.linear1_item.weight, self.model.linear2_item.weight,
+                #              # self.model.norm.weights, self.model.norm_item.weights,
+                #              ], lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+                self.optimizer = MultipleOptimizer(*ops)                
             else:
                 # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight, self.model.item_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
                 # opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight], lr=self.initial_lr, **self.optimizer_kwargs)
                 opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()) + list(self.model.item_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_dense = optim.Adam(list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-                self.optimizer = MultipleOptimizer(opti_sparse, opti_dense)
+                ops.append(opti_sparse)
+                if not self.single_layer:
+                    opti_dense = optim.Adam(list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+                    ops.append(opti_dense)
+                self.optimizer = MultipleOptimizer(*ops)
         elif self.optimizer_name == 'sgd':
             self.optimizer = optim.SGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer_name == 'asgd':
