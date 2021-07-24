@@ -21,10 +21,10 @@ import time
 import os
 import json
 from collections import defaultdict
+import itertools
 from torch.utils.tensorboard import SummaryWriter
 
 BASE_CONFIG = {
-    'hidden_dim1':512, 
     'item_embedding_dim':128, 
     #'output_file':"gdrive/My Drive/Projects with Wei/Wei_tmp_outputs/w2v_output/out.vec",
     #'min_count':5,
@@ -40,7 +40,6 @@ BASE_CONFIG = {
     'initial_lr':0.01,
 #   optimizer_name='sparse_dense_adam',
     'optimizer_name':'sparse_adam',
-    'single_layer':True,
     'sparse':True,
     'lr_schedule':False,
     'test':False,
@@ -73,6 +72,7 @@ BASE_CONFIG = {
     'torch_seed':0,
     'np_seed':0,
     'last_layer_relu':False,
+    'layer_nodes': (512,128),
 }
 
 def parse_config(base_config_update):
@@ -115,16 +115,19 @@ def optimizer_to(optim, device):
                         if subparam._grad is not None:
                             subparam._grad.data = subparam._grad.data.to(device)
 
+def flatten_2d_list(l):
+    return list(itertools.chain(*l))
+
 class WikiTrainer:
 
-    def __init__(self, hidden_dim1, item_embedding_dim, use_cuda, model_name, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
+    def __init__(self, item_embedding_dim, use_cuda, model_name, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer_name='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
-                 sparse=False, single_layer=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
+                 sparse=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
-                 torch_seed = 0, np_seed = 0, last_layer_relu = False,
+                 torch_seed = 0, np_seed = 0, last_layer_relu = False, layer_nodes = (512,128)
                  ):
 
         torch.manual_seed(torch_seed)
@@ -187,20 +190,18 @@ class WikiTrainer:
         self.normalize = normalize
         self.temperature = temperature
         self.two_tower = two_tower
-        self.single_layer = single_layer
         self.relu = relu
         self.clamp = clamp
         self.softmax = softmax
         self.kaiming_init = kaiming_init
         self.last_layer_relu = last_layer_relu
+        self.layer_nodes = layer_nodes
 
         self.model_init_kwargs = {
             'corpus_size':self.corpus_size,
             'input_embedding_dim':self.input_embedding_dim,
-            'hidden_dim1':hidden_dim1,
             'item_embedding_dim':item_embedding_dim,
             'sparse':sparse,
-            'single_layer':single_layer,
             'entity_type':self.entity_type,
             'normalize':self.normalize,
             'temperature':self.temperature,
@@ -210,6 +211,7 @@ class WikiTrainer:
             'softmax':self.softmax,
             'kaiming_init':self.kaiming_init,
             'last_layer_relu':self.last_layer_relu,
+            'layer_nodes':self.layer_nodes
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -250,7 +252,7 @@ class WikiTrainer:
 
         # use sparse dense adam solver for non-single-layer network
         # writer = SummaryWriter(f'{self.prefix}/tensorboard/')
-        if self.optimizer_name == 'sparse_adam' and not self.single_layer:
+        if self.optimizer_name == 'sparse_adam' and len(self.model.linears) >0:
             self.optimizer_name = 'sparse_dense_adam'
 
         if self.optimizer_name == 'adam':
@@ -258,33 +260,30 @@ class WikiTrainer:
         elif self.optimizer_name == 'sparse_adam':
             self.optimizer = optim.SparseAdam(list(self.model.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer_name == 'sparse_dense_adam':
-            ops = []
             if self.model.two_tower:
                 
                 opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-                ops.append(opti_sparse)
-                if not self.single_layer:
-                    params_list = list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()) \
-                                + list(self.model.linear1_item.parameters()) + list(self.model.linear2_item.parameters()) \
-                                # + list(self.model.norm.parameters()) + list(self.model.norm_item.parameters()
-                    opti_dense = optim.Adam(params_list, lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-                    ops.append(opti_dense)
+                opti_dense = optim.Adam(flatten_2d_list(
+                        [list(l.parameters()) for l in self.model.linears]
+                        + [list(l.parameters()) for l in self.model.linears_item]
+                    ), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+
                 # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
                 # opti_dense = optim.Adam(
                 #             [self.model.linear1.weight, self.model.linear2.weight,
                 #              self.model.linear1_item.weight, self.model.linear2_item.weight,
                 #              # self.model.norm.weights, self.model.norm_item.weights,
                 #              ], lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-                self.optimizer = MultipleOptimizer(*ops)                
+                             
             else:
                 # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight, self.model.item_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
                 # opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()) + list(self.model.item_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-                ops.append(opti_sparse)
-                if not self.single_layer:
-                    opti_dense = optim.Adam(list(self.model.linear1.parameters()) + list(self.model.linear2.parameters()), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-                    ops.append(opti_dense)
-                self.optimizer = MultipleOptimizer(*ops)
+                opti_sparse = optim.SparseAdam(
+                    list(self.model.input_embeddings.parameters())
+                    + list(self.model.item_embeddings.parameters())
+                    , lr=self.initial_lr, **self.optimizer_kwargs)
+                opti_dense = optim.Adam(flatten_2d_list([list(l.parameters()) for l in self.model.linears]), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+            self.optimizer = MultipleOptimizer(opti_sparse, opti_dense)   
         elif self.optimizer_name == 'sgd':
             self.optimizer = optim.SGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer_name == 'asgd':
@@ -538,18 +537,15 @@ class WikiTrainer:
 
     def write_tensorboard_stats(self, running_loss, total_training_instances):
         self.writer.add_scalar('train loss', running_loss, total_training_instances)
-        if not self.single_layer:
-            self.writer.add_histogram('linear1', self.model.linear1.weight.detach().cpu().numpy(), total_training_instances)
-            self.writer.add_histogram('linear1_diagonal', self.model.linear1.weight.detach().cpu().numpy().diagonal(), total_training_instances)
-            self.writer.add_histogram('linear2', self.model.linear2.weight.detach().cpu().numpy(), total_training_instances)
-            self.writer.add_histogram('linear2_diagonal', self.model.linear2.weight.detach().cpu().numpy().diagonal(), total_training_instances)
-            if self.two_tower:
-                self.writer.add_histogram('linear1_itme', self.model.linear1_item.weight.detach().numpy(), total_training_instances)
-                self.writer.add_histogram('linear1_itme_diagonal', self.model.linear1_item.weight.detach().numpy().diagonal(), total_training_instances)
 
-                self.writer.add_histogram('linear2_item', self.model.linear2_item.weight.detach().numpy(), total_training_instances)
-                self.writer.add_histogram('linear2_item_diagonal', self.model.linear2_item.weight.detach().numpy().diagonal(), total_training_instances)
-
+        for i, linear in enumerate(self.model.linears):
+            self.writer.add_histogram(f'linear{i}',linear.weight.detach().cpu().numpy(), total_training_instances)
+            self.writer.add_histogram(f'linear{i}_diagonal',linear.weight.detach().cpu().numpy().diagonal(), total_training_instances)
+        
+        for i, linear_item in enumerate(self.model.linears_item):
+            self.writer.add_histogram(f'linear{i}_item',linear_item.weight.detach().cpu().numpy(), total_training_instances)
+            self.writer.add_histogram(f'linear{i}_item_diagonal',linear_item.weight.detach().cpu().numpy().diagonal(), total_training_instances)
+            
 def train(config):
     wt = WikiTrainer(**config)
     wt.train()

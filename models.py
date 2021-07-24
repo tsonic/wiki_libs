@@ -6,10 +6,10 @@ import torch.nn.functional as F
 import gc
 
 class OneTower(nn.Module):
-    def __init__(self, corpus_size, input_embedding_dim, hidden_dim1, 
-                item_embedding_dim, sparse, single_layer = False, entity_type = 'page', normalize = False,
+    def __init__(self, corpus_size, input_embedding_dim, 
+                item_embedding_dim, sparse, entity_type = 'page', normalize = False,
                 temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False, kaiming_init = False,
-                last_layer_relu = False, 
+                last_layer_relu = False, layer_nodes = (512,128),
                 ):
         super(OneTower, self).__init__()
         self.normalize = normalize
@@ -23,6 +23,7 @@ class OneTower(nn.Module):
 
         self.kaiming_init = kaiming_init
         self.last_layer_relu = last_layer_relu
+        self.layer_nodes = layer_nodes
 
         if self.entity_type == 'page':
             self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
@@ -32,45 +33,14 @@ class OneTower(nn.Module):
             self.input_embeddings = nn.EmbeddingBag(corpus_size + 1, input_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
             if not self.two_tower:
                 self.item_embeddings = nn.EmbeddingBag(corpus_size + 1, item_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
-        self.single_layer = single_layer
 
-        print(f'single_layer is {self.single_layer}')
+        print(f'layer_node is {self.layer_nodes}')
 
-        # if single_layer is True, it essentially become w2v model with single hidden layer
-        if not self.single_layer:
-            self.linear1 = nn.Linear(input_embedding_dim, hidden_dim1)
-            self.linear2 = nn.Linear(hidden_dim1, item_embedding_dim)
-            init.zeros_(self.linear1.bias)
-            init.zeros_(self.linear2.bias)
-
-            if self.relu and self.kaiming_init:
-                init.kaiming_normal_(self.linear1.weight, nonlinearity='relu')
-                init.kaiming_normal_(self.linear2.weight, nonlinearity='relu')
-                # do not initialize norm layer without activation with kaiming
-                # init.kaiming_normal_(self.norm.weight, nonlinearity='relu')
-
-
-
-
-            # self.linear1.weight.requires_grad = False
-            # self.linear1.bias.requires_grad = False
-            
-            # self.linear2.weight.requires_grad = False
-            # self.linear2.bias.requires_grad = False
-        
-            if self.two_tower:
-                self.linear1_item = nn.Linear(input_embedding_dim, hidden_dim1)
-                self.linear2_item = nn.Linear(hidden_dim1, item_embedding_dim)
-                init.zeros_(self.linear1_item.bias)
-                init.zeros_(self.linear2_item.bias)
-
-                if self.relu and self.kaiming_init:
-                    init.kaiming_normal_(self.linear1_item.weight, nonlinearity='relu')
-                    init.kaiming_normal_(self.linear2_item.weight, nonlinearity='relu')
-                    # do not initialize norm layer without activation with kaiming
-                    # init.kaiming_normal_(self.norm_item.weight, nonlinearity='relu')
-
-                    
+        self.linears = self.create_and_init_tower(layer_nodes, input_embedding_dim)
+        if self.two_tower:
+            self.linears_item = self.create_and_init_tower(layer_nodes, input_embedding_dim)
+        else:
+            self.linears_item = self.create_and_init_tower(tuple(), input_embedding_dim)
 
         input_initrange = 1.0 / input_embedding_dim
         init.uniform_(self.input_embeddings.weight, -input_initrange, input_initrange)
@@ -82,6 +52,26 @@ class OneTower(nn.Module):
             self.input_embeddings.weight.data[-1] = 0
             if not self.two_tower:
                 self.item_embeddings.weight.data[-1] = 0
+
+    def create_and_init_tower(self, layer_nodes, input_dims):
+        linears = nn.ModuleList()
+        n_prev = input_dims
+        for n in layer_nodes:
+            new_layer = nn.Linear(n_prev, n)
+            if self.relu and self.kaiming_init:
+                init.kaiming_normal_(new_layer.weight, nonlinearity='relu')
+            init.zeros_(new_layer.bias)
+            linears.append(new_layer)
+            n_prev = n
+        return linears
+
+    def forward_one_tower(self, pos_input, linears):
+        ret = pos_input
+        for i, linear in enumerate(linears):
+            ret = linear(ret)
+            if self.relu and i != len(linears) - 1: # does not apply activation in last layer
+                ret = F.relu(ret)
+        return ret
     
     def forward_to_user_embedding_layer(self, pos_input, user_tower = True, force_cpu_output = False):
 
@@ -96,28 +86,12 @@ class OneTower(nn.Module):
             if next(self.parameters()).is_cuda and not chunk.is_cuda:
                 chunk = chunk.to('cuda')
             if user_tower:
-                emb_input = self.embedding_lookup(self.input_embeddings, chunk)
-                if self.single_layer:
-                    ret = emb_input
-                else:
-                    h1 = self.linear1(emb_input)
-                    if self.relu:
-                        h1 = F.relu(h1)
-
-                    ret = self.linear2(h1)
+                ret = self.embedding_lookup(self.input_embeddings, chunk)
+                ret = self.forward_one_tower(ret, self.linears)
             else:
                 if self.two_tower:
-                    emb_item = self.embedding_lookup(self.input_embeddings, chunk)
-                    if self.single_layer:
-                        ret = emb_item
-                    else:
-                        h1 = self.linear1_item(emb_item)
-                        if pos_input.shape[0] > gc_input_len:
-                            del emb_item
-                            gc.collect()
-                        if self.relu:
-                            h1 = F.relu(h1)
-                        ret = self.linear2_item(h1)
+                    ret = self.embedding_lookup(self.input_embeddings, chunk)
+                    ret = self.forward_one_tower(ret, self.linears_item)
                 else:
                     ret = self.embedding_lookup(self.item_embeddings, chunk)
             if self.last_layer_relu:
@@ -147,14 +121,6 @@ class OneTower(nn.Module):
         emb_neg_item = self.forward_to_user_embedding_layer(neg_item, user_tower=False)
         emb_neg_item = emb_neg_item.reshape(neg_item_shape[0], neg_item_shape[1], emb_neg_item.shape[-1])
 
-        # if i > 10000:
-        #     raise
-
-        # if self.normalize:
-        #     emb_user = F.normalize(emb_user, p=2, dim=-1)
-        #     emb_item = F.normalize(emb_item, p=2, dim=-1)
-        #     emb_neg_item = F.normalize(emb_neg_item, p=2, dim=-1)
-
         score = torch.sum(torch.mul(emb_user, emb_item), dim=1) / self.temperature
         score_copy = score
         if self.clamp:
@@ -168,7 +134,6 @@ class OneTower(nn.Module):
         if self.clamp:
             neg_score = torch.clamp(neg_score, max=10, min=-10)
         if self.softmax:
-            raise
             neg_score = torch.logsumexp(torch.hstack([neg_score, score_copy.unsqueeze(-1)]), dim=1)
 
         else:
