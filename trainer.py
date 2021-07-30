@@ -28,7 +28,7 @@ BASE_CONFIG = {
     'item_embedding_dim':128, 
     #'output_file':"gdrive/My Drive/Projects with Wei/Wei_tmp_outputs/w2v_output/out.vec",
     #'min_count':5,
-    'batch_size':4048,
+    'batch_size':4096,
     'num_negs':5,
     'iterations':1,
     'num_workers':7,
@@ -252,37 +252,27 @@ class WikiTrainer:
 
         # use sparse dense adam solver for non-single-layer network
         # writer = SummaryWriter(f'{self.prefix}/tensorboard/')
+
+        if self.model.two_tower:
+            embedding_params = list(self.model.input_embeddings.parameters())
+            fc_params = flatten_2d_list([list(l.parameters()) for l in self.model.linears] + [list(l.parameters()) for l in self.model.linears_item])
+        else:
+            embedding_params = list(self.model.input_embeddings.parameters()) + list(self.model.item_embeddings.parameters())
+            fc_params = flatten_2d_list([list(l.parameters()) for l in self.model.linears])
+
         if self.optimizer_name == 'sparse_adam' and len(self.model.linears) >0:
             self.optimizer_name = 'sparse_dense_adam'
 
         if self.optimizer_name == 'adam':
-            self.optimizer = optim.Adam(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
+            self.optimizer = optim.Adam([
+                {'params': embedding_params},
+                {'params': fc_params, 'lr': self.initial_lr*self.dense_lr_ratio},
+            ], lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer_name == 'sparse_adam':
             self.optimizer = optim.SparseAdam(list(self.model.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
         elif self.optimizer_name == 'sparse_dense_adam':
-            if self.model.two_tower:
-                
-                opti_sparse = optim.SparseAdam(list(self.model.input_embeddings.parameters()), lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_dense = optim.Adam(flatten_2d_list(
-                        [list(l.parameters()) for l in self.model.linears]
-                        + [list(l.parameters()) for l in self.model.linears_item]
-                    ), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-
-                # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                # opti_dense = optim.Adam(
-                #             [self.model.linear1.weight, self.model.linear2.weight,
-                #              self.model.linear1_item.weight, self.model.linear2_item.weight,
-                #              # self.model.norm.weights, self.model.norm_item.weights,
-                #              ], lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
-                             
-            else:
-                # opti_sparse = optim.SparseAdam([self.model.input_embeddings.weight, self.model.item_embeddings.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                # opti_dense = optim.Adam([self.model.linear1.weight, self.model.linear2.weight], lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_sparse = optim.SparseAdam(
-                    list(self.model.input_embeddings.parameters())
-                    + list(self.model.item_embeddings.parameters())
-                    , lr=self.initial_lr, **self.optimizer_kwargs)
-                opti_dense = optim.Adam(flatten_2d_list([list(l.parameters()) for l in self.model.linears]), lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
+            opti_sparse = optim.SparseAdam(embedding_params, lr=self.initial_lr, **self.optimizer_kwargs)
+            opti_dense = optim.Adam(fc_params, lr=self.initial_lr*self.dense_lr_ratio, **self.optimizer_kwargs)
             self.optimizer = MultipleOptimizer(opti_sparse, opti_dense)   
         elif self.optimizer_name == 'sgd':
             self.optimizer = optim.SGD(self.model.parameters(), lr=self.initial_lr, **self.optimizer_kwargs)
