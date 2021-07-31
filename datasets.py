@@ -15,7 +15,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
     def __init__(self, file_list, compression, n_chunk, num_negs, page_word_stats, ns_exponent, w2v_mimic,
                 page_min_count = 0, word_min_count = 0, entity_type='page', title_category_trunc_len = 50,
                 ngram_model_name = "title_category_ngram_model.pickle", 
-                page_emb_to_word_emb_tensor_fname = None, title_only = False,
+                page_emb_to_word_emb_tensor_fname = None, title_only = False, in_batch_neg = False,
                 ):
         'Initialization'
         #self.labels = labels
@@ -47,6 +47,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
 
         self.entity_type = entity_type
         self.title_only = title_only
+        self.in_batch_neg = in_batch_neg
 
         if self.entity_type == 'page':
             entity_frequency = page_word_stats.page_frequency
@@ -196,23 +197,10 @@ class WikiDataset(torch.utils.data.IterableDataset):
         # embedding id to page counts mapping
         use_page_negative = True
         if self.entity_type == 'word' and use_page_negative:
-            #################### May need to convert to page embedding
-            # page_id, page_counts = zip(*self.page_frequency.items())
-            # ratio = np.array(page_counts).astype(np.float64) ** ns_exponent / sum(page_counts)
-            # sampled_count = np.round(ratio * NEGATIVE_TABLE_SIZE).astype(np.int64)
-            # page_emb = [self.page2emb[p] for p in page_id]
-            # self.negatives = np.repeat(page_emb, sampled_count)
-
             self.neg_sample_prob = np.array([self.page_frequency[e] for e in self.emb2page]).astype(np.float32)
             self.neg_sample_prob = self.neg_sample_prob ** ns_exponent
             self.neg_sample_prob = self.neg_sample_prob / self.neg_sample_prob.sum()
         else:
-            ## entity_count already uses embedding index
-            # entity_counts = [self.entity_frequency_over_threshold[entity_id] for entity_id in self.emb2entity_over_threshold]
-            # ratio = np.array(entity_counts).astype(np.float64) ** ns_exponent / sum(entity_counts)
-            # sampled_count = np.round(ratio * NEGATIVE_TABLE_SIZE).astype(np.int64)
-            # self.negatives = np.repeat(range(len(sampled_count)), sampled_count)
-
             self.neg_sample_prob = np.array([self.entity_frequency_over_threshold[e] for e in self.emb2entity_over_threshold]).astype(np.float32)
             self.neg_sample_prob = self.neg_sample_prob ** ns_exponent
             self.neg_sample_prob = self.neg_sample_prob / self.neg_sample_prob.sum()
@@ -227,16 +215,21 @@ class WikiDataset(torch.utils.data.IterableDataset):
         return np.floor(a + np.random.rand(len(a))).astype(int)
 
     def collate(self,batches):
-        negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
+        
         id_list, positive_list = zip(*batches)
         ####### input are page embedding index, instead of page id.
         pos_u = torch.LongTensor(id_list)
         pos_v = torch.LongTensor(positive_list)
-        neg_v = torch.from_numpy(negs)
+        neg_v = None
+        if not self.in_batch_neg:
+            negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
+            neg_v = torch.from_numpy(negs)
         if self.entity_type != 'page':
             pos_u = self.page_emb_to_word_emb_tensor[pos_u]
             pos_v = self.page_emb_to_word_emb_tensor[pos_v]
-            neg_v = self.page_emb_to_word_emb_tensor[neg_v]
+            if not self.in_batch_neg:
+                neg_v = self.page_emb_to_word_emb_tensor[neg_v]
+
         return pos_u, pos_v, neg_v
 
     @staticmethod

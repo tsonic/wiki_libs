@@ -9,7 +9,7 @@ class OneTower(nn.Module):
     def __init__(self, corpus_size, input_embedding_dim, 
                 item_embedding_dim, sparse, entity_type = 'page', normalize = False,
                 temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False, kaiming_init = False,
-                last_layer_relu = False, layer_nodes = (512,128),
+                last_layer_relu = False, layer_nodes = (512,128), in_batch_neg = False, neg_sample_prob_corrected = False,
                 ):
         super(OneTower, self).__init__()
         self.normalize = normalize
@@ -24,6 +24,8 @@ class OneTower(nn.Module):
         self.kaiming_init = kaiming_init
         self.last_layer_relu = last_layer_relu
         self.layer_nodes = layer_nodes
+        self.in_batch_neg = in_batch_neg
+        self.neg_sample_prob_corrected = neg_sample_prob_corrected
 
         if self.entity_type == 'page':
             self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
@@ -107,8 +109,7 @@ class OneTower(nn.Module):
             return torch.cat(ret_list)
                 
 
-
-    def forward(self, pos_input, pos_item, neg_item, i):
+    def forward(self, pos_input, pos_item, neg_item, i, neg_sample_prob = None):
 
         emb_user = self.forward_to_user_embedding_layer(pos_input, user_tower=True)
 
@@ -116,28 +117,45 @@ class OneTower(nn.Module):
         emb_item = self.forward_to_user_embedding_layer(pos_item, user_tower=False)
 
         # output embedding for negative instance
-        neg_item_shape = neg_item.shape
-        neg_item = neg_item.reshape(neg_item_shape[0] * neg_item_shape[1], neg_item.shape[2])
-        emb_neg_item = self.forward_to_user_embedding_layer(neg_item, user_tower=False)
-        emb_neg_item = emb_neg_item.reshape(neg_item_shape[0], neg_item_shape[1], emb_neg_item.shape[-1])
 
         score = torch.sum(torch.mul(emb_user, emb_item), dim=1) / self.temperature
-        score_copy = score
+        
+
         if self.clamp:
             score = torch.clamp(score, max=10, min=-10)
+        if self.neg_sample_prob_corrected:
+            score = score - torch.log(neg_sample_prob[pos_item])
+        score_copy = score
         if self.softmax:
             score = -score
         else:
             score = -F.logsigmoid(score)
+        
+        if not self.in_batch_neg:
+            neg_item_shape = neg_item.shape
+            neg_item = neg_item.reshape(neg_item_shape[0] * neg_item_shape[1], neg_item.shape[2])
+            emb_neg_item = self.forward_to_user_embedding_layer(neg_item, user_tower=False)
+            emb_neg_item = emb_neg_item.reshape(neg_item_shape[0], neg_item_shape[1], emb_neg_item.shape[-1])
+            neg_score = torch.bmm(emb_neg_item, emb_user.unsqueeze(2)).squeeze() / self.temperature
+            if self.neg_sample_prob_corrected:
+                neg_score = neg_score - torch.log(neg_sample_prob[neg_item])
+            if self.clamp:
+                neg_score = torch.clamp(neg_score, max=10, min=-10)
+            if self.softmax:
+                neg_score = torch.logsumexp(torch.hstack([neg_score, score_copy.unsqueeze(-1)]), dim=1)
 
-        neg_score = torch.bmm(emb_neg_item, emb_user.unsqueeze(2)).squeeze() / self.temperature
-        if self.clamp:
-            neg_score = torch.clamp(neg_score, max=10, min=-10)
-        if self.softmax:
-            neg_score = torch.logsumexp(torch.hstack([neg_score, score_copy.unsqueeze(-1)]), dim=1)
-
+            else:
+                neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
         else:
-            neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
+            neg_score = torch.matmul(emb_user, emb_item.t()) / self.temperature
+            if self.neg_sample_prob_corrected:
+                neg_score = neg_score - torch.log(neg_sample_prob[pos_item]).unsqueeze(0)
+            if self.clamp:
+                neg_score = torch.clamp(neg_score, max=10, min=-10)
+            if self.softmax:
+                neg_score = torch.logsumexp(neg_score, dim = 1)
+            else:
+                neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1) + F.logsigmoid(-score_copy)
 
         return torch.mean(score + neg_score)   
 

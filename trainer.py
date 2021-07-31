@@ -73,6 +73,8 @@ BASE_CONFIG = {
     'np_seed':0,
     'last_layer_relu':False,
     'layer_nodes': (512,128),
+    'in_batch_neg':False,
+    'neg_sample_prob_corrected':False,
 }
 
 def parse_config(base_config_update):
@@ -127,7 +129,7 @@ class WikiTrainer:
                  testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
-                 torch_seed = 0, np_seed = 0, last_layer_relu = False, layer_nodes = (512,128)
+                 torch_seed = 0, np_seed = 0, last_layer_relu = False, layer_nodes = (512,128), in_batch_neg = False, neg_sample_prob_corrected = False,
                  ):
 
         torch.manual_seed(torch_seed)
@@ -153,6 +155,8 @@ class WikiTrainer:
         self.dense_lr_ratio = dense_lr_ratio
         self.model_name = model_name
         self.quick_eval = quick_eval
+        self.in_batch_neg = in_batch_neg
+        self.neg_sample_prob_corrected = neg_sample_prob_corrected
 
 
         self.create_dir_structure()
@@ -167,7 +171,7 @@ class WikiTrainer:
                               page_word_stats = page_word_stats, num_negs=num_negs, w2v_mimic = w2v_mimic,
                               ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count, 
                               entity_type=entity_type, page_emb_to_word_emb_tensor_fname=page_emb_to_word_emb_tensor_fname,
-                              title_category_trunc_len = title_category_trunc_len, title_only = title_only
+                              title_category_trunc_len = title_category_trunc_len, title_only = title_only, in_batch_neg = in_batch_neg,
                               )
         if collate_fn == 'custom':
             self.collate_fn = self.dataset.collate
@@ -211,7 +215,9 @@ class WikiTrainer:
             'softmax':self.softmax,
             'kaiming_init':self.kaiming_init,
             'last_layer_relu':self.last_layer_relu,
-            'layer_nodes':self.layer_nodes
+            'layer_nodes':self.layer_nodes,
+            'in_batch_neg':self.in_batch_neg,
+            'neg_sample_prob_corrected':self.neg_sample_prob_corrected,
         }
         
         self.model = OneTower(**self.model_init_kwargs)
@@ -306,6 +312,8 @@ class WikiTrainer:
 
         self.df_eval_list = []
 
+        neg_sample_prob = torch.FloatTensor(self.dataset.neg_sample_prob)
+
         if self.amp:
             scaler = torch.cuda.amp.GradScaler()
 
@@ -346,13 +354,16 @@ class WikiTrainer:
 
                 pos_u = sample_batched[0].to(self.device)
                 pos_v = sample_batched[1].to(self.device)
-                neg_v = sample_batched[2].to(self.device)
+                if sample_batched[2] is not None:
+                    neg_v = sample_batched[2].to(self.device)
+                else:
+                    neg_v = None
                 
                 self.optimizer.zero_grad()
 
                 if self.amp:
                     with torch.cuda.amp.autocast():
-                        loss = self.model.forward(pos_u, pos_v, neg_v, i)
+                        loss = self.model.forward(pos_u, pos_v, neg_v, i, neg_sample_prob)
                     scaler.scale(loss).backward()
                     if isinstance(self.optimizer, MultipleOptimizer):
                         for op in self.optimizer.optimizers:
@@ -361,7 +372,7 @@ class WikiTrainer:
                         scaler.step(self.optimizer)
                     scaler.update()
                 else:
-                    loss = self.model.forward(pos_u, pos_v, neg_v, i)
+                    loss = self.model.forward(pos_u, pos_v, neg_v, i, neg_sample_prob)
                     loss.backward()
                     self.optimizer.step()
 
