@@ -16,6 +16,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
                 page_min_count = 0, word_min_count = 0, entity_type='page', title_category_trunc_len = 50,
                 ngram_model_name = "title_category_ngram_model.pickle", 
                 page_emb_to_word_emb_tensor_fname = None, title_only = False, in_batch_neg = False,
+                neg_sample_prob_corrected = False,
                 ):
         'Initialization'
         #self.labels = labels
@@ -48,6 +49,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.entity_type = entity_type
         self.title_only = title_only
         self.in_batch_neg = in_batch_neg
+        self.neg_sample_prob_corrected = neg_sample_prob_corrected
 
         if self.entity_type == 'page':
             entity_frequency = page_word_stats.page_frequency
@@ -224,13 +226,19 @@ class WikiDataset(torch.utils.data.IterableDataset):
         if not self.in_batch_neg:
             negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
             neg_v = torch.from_numpy(negs)
+        pos_v_page = None
+        neg_v_page = None
+        if self.neg_sample_prob_corrected:
+            pos_v_page = pos_v
+            neg_v_page = neg_v
         if self.entity_type != 'page':
             pos_u = self.page_emb_to_word_emb_tensor[pos_u]
             pos_v = self.page_emb_to_word_emb_tensor[pos_v]
             if not self.in_batch_neg:
                 neg_v = self.page_emb_to_word_emb_tensor[neg_v]
 
-        return pos_u, pos_v, neg_v
+
+        return pos_u, pos_v, neg_v, pos_v_page, neg_v_page
 
     @staticmethod
     def worker_init_fn(worker_id, file_handle_lists):

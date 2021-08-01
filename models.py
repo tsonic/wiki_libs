@@ -109,7 +109,7 @@ class OneTower(nn.Module):
             return torch.cat(ret_list)
                 
 
-    def forward(self, pos_input, pos_item, neg_item, i, neg_sample_prob = None):
+    def forward(self, pos_input, pos_item, neg_item, i, neg_sample_prob = None, pos_item_page = None, neg_item_page = None):
 
         emb_user = self.forward_to_user_embedding_layer(pos_input, user_tower=True)
 
@@ -124,7 +124,7 @@ class OneTower(nn.Module):
         if self.clamp:
             score = torch.clamp(score, max=10, min=-10)
         if self.neg_sample_prob_corrected:
-            score = score - torch.log(neg_sample_prob[pos_item])
+            score = score - torch.log(neg_sample_prob[pos_item_page])
         score_copy = score
         if self.softmax:
             score = -score
@@ -138,18 +138,17 @@ class OneTower(nn.Module):
             emb_neg_item = emb_neg_item.reshape(neg_item_shape[0], neg_item_shape[1], emb_neg_item.shape[-1])
             neg_score = torch.bmm(emb_neg_item, emb_user.unsqueeze(2)).squeeze() / self.temperature
             if self.neg_sample_prob_corrected:
-                neg_score = neg_score - torch.log(neg_sample_prob[neg_item])
+                neg_score = neg_score - torch.log(neg_sample_prob[neg_item_page])
             if self.clamp:
                 neg_score = torch.clamp(neg_score, max=10, min=-10)
             if self.softmax:
                 neg_score = torch.logsumexp(torch.hstack([neg_score, score_copy.unsqueeze(-1)]), dim=1)
-
             else:
                 neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1)
         else:
             neg_score = torch.matmul(emb_user, emb_item.t()) / self.temperature
             if self.neg_sample_prob_corrected:
-                neg_score = neg_score - torch.log(neg_sample_prob[pos_item]).unsqueeze(0)
+                neg_score = neg_score - torch.log(neg_sample_prob[pos_item_page]).unsqueeze(0)
             if self.clamp:
                 neg_score = torch.clamp(neg_score, max=10, min=-10)
             if self.softmax:

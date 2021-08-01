@@ -171,7 +171,8 @@ class WikiTrainer:
                               page_word_stats = page_word_stats, num_negs=num_negs, w2v_mimic = w2v_mimic,
                               ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count, 
                               entity_type=entity_type, page_emb_to_word_emb_tensor_fname=page_emb_to_word_emb_tensor_fname,
-                              title_category_trunc_len = title_category_trunc_len, title_only = title_only, in_batch_neg = in_batch_neg,
+                              title_category_trunc_len = title_category_trunc_len, title_only = title_only, 
+                              in_batch_neg = in_batch_neg, neg_sample_prob_corrected = neg_sample_prob_corrected,
                               )
         if collate_fn == 'custom':
             self.collate_fn = self.dataset.collate
@@ -248,6 +249,23 @@ class WikiTrainer:
         shutil.rmtree(self.prefix, ignore_errors=True)
         os.makedirs(self.prefix, exist_ok = False)
         os.makedirs(self.saved_embeddings_dir, exist_ok = False)
+    
+    def parse_batch(self, sample_batched):
+        pos_u = sample_batched[0].to(self.device)
+        pos_v = sample_batched[1].to(self.device)
+        if sample_batched[2] is not None:
+            neg_v = sample_batched[2].to(self.device)
+        else:
+            neg_v = None
+        if sample_batched[3] is not None:
+            pos_v_page = sample_batched[3].to(self.device)
+        else:
+            pos_v_page = None
+        if sample_batched[4] is not None:
+            neg_v_page = sample_batched[4].to(self.device)
+        else:
+            neg_v_page = None
+        return pos_u, pos_v, neg_v, pos_v_page, neg_v_page
 
     def train(self):
         # clearn GPU memory cache
@@ -312,7 +330,7 @@ class WikiTrainer:
 
         self.df_eval_list = []
 
-        neg_sample_prob = torch.FloatTensor(self.dataset.neg_sample_prob)
+        neg_sample_prob = torch.FloatTensor(self.dataset.neg_sample_prob).to(self.device)
 
         if self.amp:
             scaler = torch.cuda.amp.GradScaler()
@@ -352,18 +370,13 @@ class WikiTrainer:
                 if len(sample_batched[0]) == 0:
                     continue
 
-                pos_u = sample_batched[0].to(self.device)
-                pos_v = sample_batched[1].to(self.device)
-                if sample_batched[2] is not None:
-                    neg_v = sample_batched[2].to(self.device)
-                else:
-                    neg_v = None
+                pos_u, pos_v, neg_v, pos_v_page, neg_v_page = self.parse_batch(sample_batched)
                 
                 self.optimizer.zero_grad()
 
                 if self.amp:
                     with torch.cuda.amp.autocast():
-                        loss = self.model.forward(pos_u, pos_v, neg_v, i, neg_sample_prob)
+                        loss = self.model.forward(pos_u, pos_v, neg_v, i, neg_sample_prob, pos_v_page, neg_v_page)
                     scaler.scale(loss).backward()
                     if isinstance(self.optimizer, MultipleOptimizer):
                         for op in self.optimizer.optimizers:
@@ -372,7 +385,7 @@ class WikiTrainer:
                         scaler.step(self.optimizer)
                     scaler.update()
                 else:
-                    loss = self.model.forward(pos_u, pos_v, neg_v, i, neg_sample_prob)
+                    loss = self.model.forward(pos_u, pos_v, neg_v, i, neg_sample_prob, pos_v_page, neg_v_page)
                     loss.backward()
                     self.optimizer.step()
 
