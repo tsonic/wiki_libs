@@ -103,6 +103,10 @@ class OneTower(nn.Module):
             if force_cpu_output and ret.is_cuda:
                 ret = ret.cpu()
             ret_list.append(ret)
+            if (i > 1):
+                print(i)
+                gc.collect()
+                torch.cuda.empty_cache()
         if len(ret_list) == 1:
             return ret_list[0]
         else:
