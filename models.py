@@ -77,7 +77,7 @@ class OneTower(nn.Module):
     
     def forward_to_user_embedding_layer(self, pos_input, user_tower = True, force_cpu_output = False):
 
-        gc_input_len = 500_000
+        gc_input_len = 100_000
         # input embedding
         
         chunks = torch.split(pos_input, gc_input_len)
@@ -104,7 +104,7 @@ class OneTower(nn.Module):
                 ret = ret.cpu()
             ret_list.append(ret)
             if (i > 1):
-                print(i)
+                print(i, flush = True)
                 gc.collect()
                 torch.cuda.empty_cache()
         if len(ret_list) == 1:
