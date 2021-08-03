@@ -104,7 +104,6 @@ class OneTower(nn.Module):
                 ret = ret.cpu()
             ret_list.append(ret)
             if (i > 1):
-                print(i, flush = True)
                 gc.collect()
                 torch.cuda.empty_cache()
         if len(ret_list) == 1:
