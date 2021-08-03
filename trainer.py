@@ -585,6 +585,16 @@ class MultipleOptimizer(optim.Optimizer):
     def load_state_dict(self, state_dicts):
         for sd, op in zip(state_dicts, self.optimizers):
             op.load_state_dict(sd)
+    
+    def __setstate__(self, state_dict):
+        if isinstance(state_dict, dict):
+            for op in self.optimizers:
+                op.__setstate__(state_dict)
+        elif isinstance(state_dict, list):
+            for sd, op in zip(state_dict, self.optimizers):
+                op.__setstate__(sd)
+        else:
+            raise Exception(f'unknown state_dict type {type(state_dict)}')
 
 class MultipleScheduler(object):
     def __init__(self, optimizer, iter_num):
