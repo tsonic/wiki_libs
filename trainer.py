@@ -533,7 +533,9 @@ class WikiTrainer:
         gc.collect()
         torch.cuda.empty_cache()
         if is_colab():
-            optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl', map_location=self.device)
+            optimizer_state_dict = torch.load('/tmp/optimizer_state_dict_cache.pkl'
+                #, map_location=self.device
+                )
             self.optimizer.load_state_dict(optimizer_state_dict)
         else:
             if self.use_cuda:
