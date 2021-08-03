@@ -9,7 +9,7 @@ from wiki_libs.preprocessing import (
 from wiki_libs.ngram import NGRAM_MODEL_PATH_PREFIX, load_ngram_model, get_df_title_category_transformed, transform_ngram
 import numpy as np
 
-NEGATIVE_TABLE_SIZE = 1e8
+NEGATIVE_TABLE_SIZE = 5e7
 class WikiDataset(torch.utils.data.IterableDataset):
     'Characterizes a dataset for PyTorch'
     def __init__(self, file_list, compression, n_chunk, num_negs, page_word_stats, ns_exponent, w2v_mimic,

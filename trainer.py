@@ -407,6 +407,8 @@ class WikiTrainer:
                     #self.write_tensorboard_stats(running_loss, total_training_instances)
                     prev_time = time_now
                     prev_i = i
+            del dataloader, loss, pos_u, pos_v, neg_v, pos_v_page, neg_v_page, sample_batched
+            gc.collect()
 
             print(i)
             if self.lr_schedule:
@@ -529,7 +531,7 @@ class WikiTrainer:
             compute_recall(df_links_test, df_embedding, nn, [10, 50, 100, 300],use_user_emb = True)
             .assign(iter_num = iter_num)
         )
-        del nn, df_embedding
+        del nn, df_embedding, df_page, df_links_test
         gc.collect()
         torch.cuda.empty_cache()
         if is_colab():
