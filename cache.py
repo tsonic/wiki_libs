@@ -4,8 +4,11 @@ import pandas as pd
 
 import torch
 import copy
+from wiki_libs.preprocessing import is_colab, convert_to_colab_path
 
 CACHE_PATH = 'wiki_data/cache'
+if is_colab():
+    CACHE_PATH = convert_to_colab_path(CACHE_PATH)
 
 default_ngram_model_key_dict = {
     'prefix':'ngram_model',
