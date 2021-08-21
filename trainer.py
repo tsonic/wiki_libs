@@ -20,6 +20,7 @@ import numpy as np
 import time
 import os
 import json
+import copy
 from collections import defaultdict
 import itertools
 from torch.utils.tensorboard import SummaryWriter
@@ -46,8 +47,6 @@ BASE_CONFIG = {
     'save_embedding':True,
     'save_item_embedding':False,
     'w2v_mimic':False,
-    'page_word_stats_path':"wiki_data/page_word_stats.json",
-    'page_emb_to_word_emb_tensor_fname':"page_emb_to_word_emb_tensor.npz",
     'use_cuda':True,
     'page_min_count':50,
     'testset_ratio':0.05,
@@ -77,24 +76,55 @@ BASE_CONFIG = {
     'neg_sample_prob_corrected':False,
 }
 
-def parse_config(base_config_update):
+def config2str(cfg):
+    ret = ''
+    for k, v in cfg.items():
+        if isinstance(v, bool):
+            if v:
+                ret += f'_{k}'
+            else:
+                ret += f'_not_{k}'
+        else:
+            ret += f"_{k}_{v}"
+    return ret
+
+def update_dict(d, u):
+    # recursive dict update
+    for k, v in u.items():
+        if isinstance(v, dict):
+            d[k] = update_dict(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d
+
+def update_config(base_config, base_config_update):
+
     actual_config_update = {}
-    config = BASE_CONFIG.copy()
+    config = copy.deepcopy(base_config)
     for k,v in base_config_update.items():
-        if k not in BASE_CONFIG or BASE_CONFIG[k] != v:
+        if k not in base_config:
+            raise Exception(f'{k} is not in the base_config {base_config}')
+        if isinstance(v, dict):
+            sub_actual_config_update = update_config(base_config[k], v)[1]
+            if sub_actual_config_update:
+                actual_config_update[k] = sub_actual_config_update
+            # if base_config.get('prefix','')=='page_word_stats':
+            #     raise
+            # if base_config.get('prefix','')=='page_emb_to_word_emb_tensor':
+            #     raise
+        elif base_config[k] != v:
             actual_config_update[k] = v
     if actual_config_update:
-        new_model_name = 'baseline'
-        for k, v in actual_config_update.items():
-            if isinstance(v, bool):
-                if v:
-                    new_model_name += f'_{k}'
-                else:
-                    new_model_name += f'_not_{k}'
-            else:
-                new_model_name += f"_{k}_{v}"
-        actual_config_update['model_name'] = new_model_name
-        config.update(actual_config_update)
+        update_dict(config, actual_config_update)
+    # if base_config.get('prefix','')=='page_emb_to_word_emb_tensor':
+    #     raise
+    return config, actual_config_update
+
+def parse_config(base_config_update):
+    config, actual_config_update = update_config(BASE_CONFIG, base_config_update)
+    if actual_config_update:
+        new_model_name = 'baseline' + config2str(actual_config_update)
+        config['model_name'] = new_model_name
     return config
 
 def optimizer_to(optim, device):
@@ -122,11 +152,11 @@ def flatten_2d_list(l):
 
 class WikiTrainer:
 
-    def __init__(self, item_embedding_dim, use_cuda, model_name, page_word_stats_path = None, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
+    def __init__(self, item_embedding_dim, use_cuda, model_name, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer_name='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
                  sparse=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
-                 testset_ratio = 0.1, entity_type = 'page', amp = False, page_emb_to_word_emb_tensor_fname = None, title_category_trunc_len = 30,
+                 testset_ratio = 0.1, entity_type = 'page', amp = False, title_category_trunc_len = 30,
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
                  torch_seed = 0, np_seed = 0, last_layer_relu = False, layer_nodes = (512,128), in_batch_neg = False, neg_sample_prob_corrected = False,
@@ -139,7 +169,7 @@ class WikiTrainer:
         if self.w2v_mimic:
             print('Using w2v mimic files for training...', flush=True)
 
-        page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic, title_only = title_only, stats_column=stats_column)
+        #page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic, title_only = title_only, stats_column=stats_column)
 
         self.timeout = timeout
         self.test = test
@@ -168,9 +198,9 @@ class WikiTrainer:
 
         # Initialize dataset, file_list set to None for now. Will update later.
         self.dataset = WikiDataset(file_list = None, compression = None, n_chunk = n_chunk, 
-                              page_word_stats = page_word_stats, num_negs=num_negs, w2v_mimic = w2v_mimic,
+                              num_negs=num_negs, w2v_mimic = w2v_mimic,
                               ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count, 
-                              entity_type=entity_type, page_emb_to_word_emb_tensor_fname=page_emb_to_word_emb_tensor_fname,
+                              entity_type=entity_type,
                               title_category_trunc_len = title_category_trunc_len, title_only = title_only, 
                               in_batch_neg = in_batch_neg, neg_sample_prob_corrected = neg_sample_prob_corrected,
                               )

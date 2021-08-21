@@ -6,11 +6,18 @@ import json
 import numpy as np
 from gensim.models.phrases import Phrases, Phraser, ENGLISH_CONNECTOR_WORDS
 from wiki_libs.preprocessing import read_category_links, process_title, path_decoration, read_page_data
+from wiki_libs.cache import get_from_cached_file
 
 
-NGRAM_MODEL_PATH_PREFIX = "wiki_data/ngram_model/"
 def train_phraser(sentences, min_count=5):
     return Phraser(Phrases(sentences, min_count=min_count, delimiter='_', connector_words=ENGLISH_CONNECTOR_WORDS))
+
+def train_wiki_ngram(n=3, min_count=5, out_file='ngram_model.pickle', title_only = False):
+    titles, categories = get_titles_and_categories()
+    sentences = titles
+    if not title_only:
+        sentences += categories
+    return train_ngram(titles + categories, n=n, min_count=min_count, out_file=out_file)
 
 def train_ngram(sentences, n=3, min_count=5, out_file='ngram_model.pickle'):
     ngram_model = []
@@ -21,7 +28,7 @@ def train_ngram(sentences, n=3, min_count=5, out_file='ngram_model.pickle'):
             xgram = train_phraser(sentences, min_count=min_count)
         sentences = xgram[sentences]
         ngram_model.append(xgram)
-    pickle.dump(ngram_model, open(NGRAM_MODEL_PATH_PREFIX + out_file, "wb"))
+    pickle.dump(ngram_model, open(out_file, "wb"))
     return ngram_model
 
 def transform_ngram(sentences, ngram_model):
@@ -29,11 +36,15 @@ def transform_ngram(sentences, ngram_model):
         sentences = m[sentences]
     return list(sentences)
 
-def get_transformed_title_category(ngram_model):
+def get_titles_and_categories():
     df_cp = read_category_links()
     df_page = read_page_data()
     titles = df_page['page_title'].dropna().drop_duplicates().apply(process_title).tolist()
     categories = df_cp['page_category'].dropna().drop_duplicates().apply(process_title).tolist()
+    return titles, categories
+
+def get_transformed_title_category(ngram_model):
+    titles, categories = get_titles_and_categories()
     title_transformed = transform_ngram(titles, ngram_model)
     category_transformed = transform_ngram(categories, ngram_model)
     return title_transformed, category_transformed
@@ -41,17 +52,19 @@ def get_transformed_title_category(ngram_model):
 def load_ngram_model(model_file):
     return pickle.load(open(model_file, "rb"))
 
-def get_df_title_category_transformed(read_cached = True, 
-                                        fname='df_title_category_transformed.parquet', 
-                                        ngram_model_name = "title_category_ngram_model.pickle",
-                                        title_only = False):
-    path = path_decoration(f'wiki_data/{fname}', w2v_mimic=False)
-    if read_cached:
-        df_title_category_transformed = pd.read_parquet(path, columns = ['page_id','page_title_category_transformed'], engine = 'pyarrow')
-        return df_title_category_transformed
+# def get_df_title_category_transformed(read_cached = True, 
+#                                         fname='df_title_category_transformed.parquet', 
+#                                         ngram_model_name = "title_category_ngram_model.pickle",
+#                                         title_only = False):
+#     path = path_decoration(f'wiki_data/{fname}', w2v_mimic=False)
+#     if read_cached:
+#         df_title_category_transformed = pd.read_parquet(path, columns = ['page_id','page_title_category_transformed'], engine = 'pyarrow')
+#         return df_title_category_transformed
 
-    ngram_model = load_ngram_model(NGRAM_MODEL_PATH_PREFIX + ngram_model_name)
-    
+#     return generate_df_title_category_transformed(ngram_model_name, title_only)
+
+def generate_df_title_category_transformed(ngram_model, title_only):
+
     df_cp = read_category_links()
     df_page = read_page_data()
 
@@ -95,6 +108,6 @@ def get_df_title_category_transformed(read_cached = True,
         .to_frame('page_title_category_transformed')
         .reset_index()
     )
-    df_title_category_transformed.to_parquet(path, index = False, compression = 'snappy')
+#    df_title_category_transformed.to_parquet(path, index = False, compression = 'snappy')
 
     return df_title_category_transformed
