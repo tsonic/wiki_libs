@@ -12,12 +12,12 @@ from wiki_libs.cache import get_from_cached_file
 def train_phraser(sentences, min_count=5):
     return Phraser(Phrases(sentences, min_count=min_count, delimiter='_', connector_words=ENGLISH_CONNECTOR_WORDS))
 
-def train_wiki_ngram(n=3, min_count=5, out_file='ngram_model.pickle', title_only = False):
+def train_wiki_ngram(n=3, min_count=5, out_file='ngram_model.pickle', title_only = False, category_single_word = False):
     titles, categories = get_titles_and_categories()
     sentences = titles
-    if not title_only:
+    if not title_only and not category_single_word:
         sentences += categories
-    return train_ngram(titles + categories, n=n, min_count=min_count, out_file=out_file)
+    return train_ngram(sentences, n=n, min_count=min_count, out_file=out_file)
 
 def train_ngram(sentences, n=3, min_count=5, out_file='ngram_model.pickle'):
     ngram_model = []
@@ -43,11 +43,14 @@ def get_titles_and_categories():
     categories = df_cp['page_category'].dropna().drop_duplicates().apply(process_title).tolist()
     return titles, categories
 
-def get_transformed_title_category(ngram_model):
-    titles, categories = get_titles_and_categories()
-    title_transformed = transform_ngram(titles, ngram_model)
-    category_transformed = transform_ngram(categories, ngram_model)
-    return title_transformed, category_transformed
+# def get_transformed_title_category(ngram_model,category_single_word):
+#     titles, categories = get_titles_and_categories()
+#     title_transformed = transform_ngram(titles, ngram_model)
+#     if category_single_word:
+#         category_transformed = ['_'.join(c) for c in categories]
+#     else:
+#         category_transformed = transform_ngram(categories, ngram_model)
+#     return title_transformed, category_transformed
 
 def load_ngram_model(model_file):
     return pickle.load(open(model_file, "rb"))
@@ -63,7 +66,7 @@ def load_ngram_model(model_file):
 
 #     return generate_df_title_category_transformed(ngram_model_name, title_only)
 
-def generate_df_title_category_transformed(ngram_model, title_only):
+def generate_df_title_category_transformed(ngram_model, title_only, category_single_word):
 
     df_cp = read_category_links()
     df_page = read_page_data()
@@ -85,20 +88,23 @@ def generate_df_title_category_transformed(ngram_model, title_only):
     )
     if not title_only:
         df_category = (
-            df_cp[['page_category']]
-            .drop_duplicates()
-            .assign(page_category_transformed = lambda df: transform_ngram(
-                    df['page_category'].apply(process_title).tolist(),
-                    ngram_model,
-                )
-            )
+                df_cp[['page_category']]
+                .drop_duplicates()
         )
+        if category_single_word:
+            df_category['page_category_transformed'] = [['_'.join(process_title(c))] for c in df_category['page_category']]
+
+        else:
+            df_category['page_category_transformed'] = transform_ngram(
+                        df_category['page_category'].apply(process_title).tolist(),
+                        ngram_model,
+                    )
 
         df = df.append(
             df_cp[['page_id', 'page_category']]
                 .merge(df_category, on = 'page_category')
                 .rename(columns = {'page_category_transformed': 'page_title_category_transformed'})
-                .sample(frac = 1.0)     # random sample category words
+                .sample(frac = 1.0, random_state = 0)     # random sample category words
         )
 
     df_title_category_transformed = (
@@ -109,5 +115,4 @@ def generate_df_title_category_transformed(ngram_model, title_only):
         .reset_index()
     )
 #    df_title_category_transformed.to_parquet(path, index = False, compression = 'snappy')
-
     return df_title_category_transformed

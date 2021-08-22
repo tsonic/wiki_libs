@@ -74,6 +74,7 @@ BASE_CONFIG = {
     'layer_nodes': (512,128),
     'in_batch_neg':False,
     'neg_sample_prob_corrected':False,
+    'category_single_word':False,
 }
 
 def config2str(cfg):
@@ -160,6 +161,7 @@ class WikiTrainer:
                  dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
                  torch_seed = 0, np_seed = 0, last_layer_relu = False, layer_nodes = (512,128), in_batch_neg = False, neg_sample_prob_corrected = False,
+                 category_single_word = False,
                  ):
 
         torch.manual_seed(torch_seed)
@@ -203,6 +205,7 @@ class WikiTrainer:
                               entity_type=entity_type,
                               title_category_trunc_len = title_category_trunc_len, title_only = title_only, 
                               in_batch_neg = in_batch_neg, neg_sample_prob_corrected = neg_sample_prob_corrected,
+                              category_single_word = category_single_word,
                               )
         if collate_fn == 'custom':
             self.collate_fn = self.dataset.collate

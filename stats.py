@@ -1,7 +1,7 @@
 from wiki_libs.preprocessing import convert_to_w2v_mimic_path, read_link_pairs_chunks, path_decoration, append_suffix_to_fname
 import pandas as pd
 import json
-from wiki_libs.ngram import get_transformed_title_category
+from wiki_libs.cache import get_from_cached_file
 import itertools
 
 
@@ -14,6 +14,7 @@ class PageWordStats(object):
                  json_str = None,
                  title_only = False,
                  stats_column = 'both',
+                 category_single_word = False,
                  ):
 
         if read_path is not None:
@@ -65,12 +66,11 @@ class PageWordStats(object):
                 print('Each word is a "page" in w2v_mimic mode. Refer to page count as the actual word count, and discard the word count output below. ')
                 s_words = pd.Series(['dummy']).value_counts()
             else:
-                title_transformed, category_transformed = get_transformed_title_category(ngram_model)
-                all_words = title_transformed
-                if not title_only:
-                    all_words += category_transformed
+                df_title_category_transformed = get_from_cached_file({'prefix':'df_title_category_transformed',
+                                'ngram_model_key_dict':{'prefix':'ngram_model','title_only':title_only,'category_single_word':category_single_word}})
+                
                 s_words = (
-                    pd.Series(itertools.chain(*all_words))
+                    pd.Series(itertools.chain(*df_title_category_transformed['page_title_category_transformed'].tolist()))
                     .value_counts()
                 )
             # word_frequency is a list, where ith element is the word frequency of word with embedding id i.

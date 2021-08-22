@@ -13,6 +13,7 @@ if is_colab():
 default_ngram_model_key_dict = {
     'prefix':'ngram_model',
     'title_only':False,
+    'category_single_word':False,
 }
 
 default_df_title_category_transformed_key_dict = {
@@ -87,7 +88,11 @@ def get_from_cached_file(key_dict, **kwarg):
             return pd.read_parquet(path,  columns = ['page_id','page_title_category_transformed'], engine = 'pyarrow')
         else:
             ngram_model = get_from_cached_file(key_dict['ngram_model_key_dict'])
-            df_title_category =  generate_df_title_category_transformed(ngram_model, title_only = key_dict['ngram_model_key_dict']['title_only'])
+            df_title_category =  generate_df_title_category_transformed(
+                                    ngram_model, 
+                                    title_only = key_dict['ngram_model_key_dict']['title_only'],
+                                    category_single_word = key_dict['ngram_model_key_dict']['category_single_word'],
+                            )
             df_title_category.to_parquet(path, index = False, compression = 'snappy')
             return df_title_category
     elif prefix == 'ngram_model':
@@ -95,7 +100,8 @@ def get_from_cached_file(key_dict, **kwarg):
         if is_cache_file_exist(path):
             return load_ngram_model(path)
         else:
-            return train_wiki_ngram(n=3, min_count=5, out_file=path, title_only = key_dict['title_only'])
+            return train_wiki_ngram(n=3, min_count=5, out_file=path, 
+                                title_only = key_dict['title_only'], category_single_word = key_dict['category_single_word'])
     elif prefix == 'page_word_stats':
         path = f'{CACHE_PATH}/{fname}.json'
         from wiki_libs.stats import PageWordStats
@@ -109,6 +115,7 @@ def get_from_cached_file(key_dict, **kwarg):
                             w2v_mimic = key_dict['w2v_mimic'],
                             stats_column = key_dict['stats_column'],
                             title_only = key_dict['ngram_model_key_dict']['title_only'],
+                            category_single_word = key_dict['ngram_model_key_dict']['category_single_word'], 
                             )
     elif prefix == 'page_emb_to_word_emb_tensor':
         path = f'{CACHE_PATH}/{fname}.pickle'
@@ -120,6 +127,7 @@ def get_from_cached_file(key_dict, **kwarg):
             page_word_stats = get_from_cached_file(page_word_stats_key_dict)
             return WikiDataset.generate_page_emb_to_word_emb_tensor(path, page_word_stats, 
                                                                 title_only = page_word_stats_key_dict['ngram_model_key_dict']['title_only'], 
+                                                                category_single_word = page_word_stats_key_dict['ngram_model_key_dict']['category_single_word'], 
                                                                 title_category_trunc_len = key_dict['title_category_trunc_len'])
     else:
         raise Exception('Unknown prefix!')

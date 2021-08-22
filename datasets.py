@@ -16,7 +16,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
     def __init__(self, file_list, compression, n_chunk, num_negs, ns_exponent, w2v_mimic,
                 page_min_count = 0, word_min_count = 0, entity_type='page', title_category_trunc_len = 50,stats_column = 'both',
                 title_only = False, in_batch_neg = False,
-                neg_sample_prob_corrected = False,
+                neg_sample_prob_corrected = False, category_single_word = False,
                 ):
         'Initialization'
         #self.labels = labels
@@ -45,10 +45,11 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.w2v_mimic = w2v_mimic
         self.title_only = title_only
         self.stats_column = stats_column
+        self.category_single_word = category_single_word
         page_word_stats = get_from_cached_file({'prefix':'page_word_stats', 
                                                     'w2v_mimic':self.w2v_mimic, 
                                                     'stats_column':self.stats_column,
-                                                    'ngram_model_key_dict':{'prefix':'ngram_model','title_only':self.title_only}
+                                                    'ngram_model_key_dict':{'prefix':'ngram_model','title_only':self.title_only, 'category_single_word':self.category_single_word},
                                                     })
         
 
@@ -105,7 +106,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
         
         if self.entity_type == 'word':
             self.page_emb_to_word_emb_tensor = get_from_cached_file({'prefix':'page_emb_to_word_emb_tensor', 
-            'page_word_stats_key_dict': {'ngram_model_key_dict':{'prefix':'ngram_model','title_only':self.title_only}},
+            'page_word_stats_key_dict': {'ngram_model_key_dict':{'prefix':'ngram_model','title_only':self.title_only,'category_single_word':self.category_single_word}},
             'title_category_trunc_len':self.title_category_trunc_len,
             })
         
@@ -122,13 +123,14 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.initTableNegatives(ns_exponent=ns_exponent)
 
     @staticmethod
-    def generate_page_emb_to_word_emb_tensor(output_path, page_word_stats, title_only, title_category_trunc_len):
+    def generate_page_emb_to_word_emb_tensor(output_path, page_word_stats, title_only, category_single_word, title_category_trunc_len):
         _, _, emb2page, emb2word, page2emb, word2emb = WikiDataset.generate_page_word_emb_index(page_word_stats)
         print('start generating page_emb_to_word_emb_tensor', flush = True)
         import time
         st = time.time()
         page_emb_to_word_emb_tensor = torch.LongTensor(
-            get_from_cached_file({'prefix':'df_title_category_transformed','ngram_model_key_dict':{'prefix':'ngram_model','title_only':title_only}})
+            get_from_cached_file({'prefix':'df_title_category_transformed',
+                                'ngram_model_key_dict':{'prefix':'ngram_model','title_only':title_only,'category_single_word':category_single_word}})
             .set_index('page_id')
             ['page_title_category_transformed']
             # the last row in the embedding is padded 0 vector
