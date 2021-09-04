@@ -124,7 +124,7 @@ def generate_df_title_category_transformed(ngram_model, text_source, category_si
     df_title_category_transformed = (
         pd.concat(df_list)
         .groupby(['page_id'])
-            ['page_title_category_transformed'].apply(lambda x: sorted(set(itertools.chain.from_iterable(x))))
+            ['page_title_category_transformed'].apply(lambda x: list(dict.fromkeys(itertools.chain.from_iterable(x))))
         .to_frame('page_title_category_transformed')
         .reset_index()
     )

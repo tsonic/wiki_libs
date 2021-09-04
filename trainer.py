@@ -386,7 +386,6 @@ class WikiTrainer:
 
             # shuffle order of input for each epoch
             np.random.shuffle(self.file_handle_lists_train)
-            print(self.file_handle_lists_train)
             if self.num_workers > 0:
                 self.file_handle_lists_train_split = np.array_split(self.file_handle_lists_train, self.num_workers)
             else:
