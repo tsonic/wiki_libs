@@ -6,7 +6,9 @@ import torch.nn.functional as F
 import gc
 
 class OneTower(nn.Module):
-    def __init__(self, corpus_size, input_embedding_dim, 
+    def __init__(self, 
+                corpus_size,
+                input_embedding_dim, #tuple
                 item_embedding_dim, sparse, entity_type = 'page', normalize = False,
                 temperature = 1, two_tower = False, relu = True, clamp = True, softmax = False, kaiming_init = False,
                 last_layer_relu = False, layer_nodes = (512,128), in_batch_neg = False, neg_sample_prob_corrected = False,
@@ -27,31 +29,39 @@ class OneTower(nn.Module):
         self.in_batch_neg = in_batch_neg
         self.neg_sample_prob_corrected = neg_sample_prob_corrected
 
+        self.input_embeddings = nn.ModuleList() # list
         if self.entity_type == 'page':
-            self.input_embeddings = nn.Embedding(corpus_size, input_embedding_dim, sparse=sparse)
+            for ied in input_embedding_dim:
+                self.input_embeddings.append(nn.Embedding(corpus_size, ied, sparse=sparse))
             if not self.two_tower:
                 self.item_embeddings = nn.Embedding(corpus_size, item_embedding_dim, sparse=sparse)
         else:
-            self.input_embeddings = nn.EmbeddingBag(corpus_size + 1, input_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
-            if not self.two_tower:
-                self.item_embeddings = nn.EmbeddingBag(corpus_size + 1, item_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
+            for ied, sz in zip(input_embedding_dim, corpus_size):
+                self.input_embeddings.append(nn.EmbeddingBag(sz + 1, ied, sparse=sparse, padding_idx=-1, mode = 'sum'))
+            # if not self.two_tower:
+            #     self.item_embeddings = nn.EmbeddingBag(corpus_size + 1, item_embedding_dim, sparse=sparse, padding_idx=-1, mode = 'sum')
 
         print(f'layer_node is {self.layer_nodes}')
 
-        self.linears = self.create_and_init_tower(layer_nodes, input_embedding_dim)
-        if self.two_tower:
-            self.linears_item = self.create_and_init_tower(layer_nodes, input_embedding_dim)
-        else:
-            self.linears_item = self.create_and_init_tower(tuple(), input_embedding_dim)
+        tower_input_dim = sum(input_embedding_dim)
 
-        input_initrange = 1.0 / input_embedding_dim
-        init.uniform_(self.input_embeddings.weight, -input_initrange, input_initrange)
+        self.linears = self.create_and_init_tower(layer_nodes, tower_input_dim)
+        if self.two_tower:
+            self.linears_item = self.create_and_init_tower(layer_nodes, tower_input_dim)
+        else:
+            self.linears_item = self.create_and_init_tower(tuple(), tower_input_dim)
+
+       
+        for ie, ied in zip(self.input_embeddings, input_embedding_dim):
+            input_initrange = 1.0 / ied
+            init.uniform_(ie.weight, -input_initrange, input_initrange)
         if not self.two_tower:
             item_initrange = 1.0 / item_embedding_dim
             init.uniform_(self.item_embeddings.weight, -item_initrange, item_initrange)
 
         if self.entity_type == 'word':
-            self.input_embeddings.weight.data[-1] = 0
+            for ie in self.input_embeddings:
+                ie.weight.data[-1] = 0
             if not self.two_tower:
                 self.item_embeddings.weight.data[-1] = 0
 
@@ -80,19 +90,27 @@ class OneTower(nn.Module):
         gc_input_len = 100_000
         # input embedding
         
-        chunks = torch.split(pos_input, gc_input_len)
+        # pos_input here is a list of word index tensors, each element represent one type of embedding.
+        chunks = list(zip(*[torch.split(pi, gc_input_len) for pi in pos_input]))
 
         ret_list = []
 
         for i, chunk in enumerate(chunks):
-            if next(self.parameters()).is_cuda and not chunk.is_cuda:
-                chunk = chunk.to('cuda')
+            if next(self.parameters()).is_cuda and not chunk[0].is_cuda:
+                chunk = [c.to('cuda') for c in chunk]
             if user_tower:
-                ret = self.embedding_lookup(self.input_embeddings, chunk)
+                if len(self.input_embeddings) == 1:
+                    ret = self.embedding_lookup(self.input_embeddings[0], chunk[0])
+                else:
+                    # concatenate different embeddings
+                    ret = torch.hstack([self.embedding_lookup(ie, c) for ie, c in zip(self.input_embeddings, chunk)])
                 ret = self.forward_one_tower(ret, self.linears)
             else:
                 if self.two_tower:
-                    ret = self.embedding_lookup(self.input_embeddings, chunk)
+                    if len(self.input_embeddings) == 1:
+                        ret = self.embedding_lookup(self.input_embeddings[0], chunk[0])
+                    else:
+                        ret = torch.hstack([self.embedding_lookup(ie, c) for ie, c in zip(self.input_embeddings, chunk)])
                     ret = self.forward_one_tower(ret, self.linears_item)
                 else:
                     ret = self.embedding_lookup(self.item_embeddings, chunk)
@@ -158,7 +176,6 @@ class OneTower(nn.Module):
                 neg_score = torch.logsumexp(neg_score, dim = 1)
             else:
                 neg_score = -torch.sum(F.logsigmoid(-neg_score), dim=1) + F.logsigmoid(-score_copy)
-
         return torch.mean(score + neg_score)   
 
     def embedding_lookup(self, embedding, embed_index):
@@ -167,7 +184,8 @@ class OneTower(nn.Module):
         elif self.entity_type == 'word':
             # need to fix lookup -1 embedding index should return 0 embedding vector
             # mean pooling
-            select = (embed_index != embedding.padding_idx)
+            epsilon = 1e-10
+            select = (embed_index != embedding.padding_idx) + epsilon
             sentence_emb_input = embedding(embed_index)
             emb_input = sentence_emb_input / select.sum(axis = -1).unsqueeze(-1)
         

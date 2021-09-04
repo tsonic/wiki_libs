@@ -12,18 +12,21 @@ if is_colab():
 
 default_ngram_model_key_dict = {
     'prefix':'ngram_model',
-    'title_only':False,
+    'text_source':'both',
     'category_single_word':False,
+    'category_embedding':False,
 }
 
 default_df_title_category_transformed_key_dict = {
     'prefix':'df_title_category_transformed',
     'ngram_model_key_dict':default_ngram_model_key_dict,
+    'no_stop_words':False,
 }
 
 default_page_word_stats = {
     'prefix':'page_word_stats',
     'ngram_model_key_dict':default_ngram_model_key_dict,
+    'df_title_category_transformed_key_dict':default_df_title_category_transformed_key_dict,
     'stats_column':'both',
     'w2v_mimic':False,
     'n_chunk':10,
@@ -37,7 +40,7 @@ default_key_dict = {
         'prefix':'page_emb_to_word_emb_tensor',
         'title_category_trunc_len':30,
         'page_word_stats_key_dict':default_page_word_stats,
-        'df_title_category_transformed_key_dict':default_df_title_category_transformed_key_dict,
+#        'df_title_category_transformed_key_dict':default_df_title_category_transformed_key_dict,
     }
 }
 
@@ -90,8 +93,9 @@ def get_from_cached_file(key_dict, **kwarg):
             ngram_model = get_from_cached_file(key_dict['ngram_model_key_dict'])
             df_title_category =  generate_df_title_category_transformed(
                                     ngram_model, 
-                                    title_only = key_dict['ngram_model_key_dict']['title_only'],
+                                    text_source = key_dict['ngram_model_key_dict']['text_source'],
                                     category_single_word = key_dict['ngram_model_key_dict']['category_single_word'],
+                                    no_stop_words = key_dict['no_stop_words']
                             )
             df_title_category.to_parquet(path, index = False, compression = 'snappy')
             return df_title_category
@@ -101,12 +105,12 @@ def get_from_cached_file(key_dict, **kwarg):
             return load_ngram_model(path)
         else:
             return train_wiki_ngram(n=3, min_count=5, out_file=path, 
-                                title_only = key_dict['title_only'], category_single_word = key_dict['category_single_word'])
+                                text_source = key_dict['text_source'], category_single_word = key_dict['category_single_word'])
     elif prefix == 'page_word_stats':
-        path = f'{CACHE_PATH}/{fname}.json'
+        path = f'{CACHE_PATH}/{fname}.pickle'
         from wiki_libs.stats import PageWordStats
         if is_cache_file_exist(path):
-            return PageWordStats(read_path=path)
+            return PageWordStats.from_pickle(path)
         else:
             ngram_model = get_from_cached_file(key_dict['ngram_model_key_dict'])
             return PageWordStats(read_path=None, 
@@ -114,8 +118,10 @@ def get_from_cached_file(key_dict, **kwarg):
                             ngram_model = ngram_model, 
                             w2v_mimic = key_dict['w2v_mimic'],
                             stats_column = key_dict['stats_column'],
-                            title_only = key_dict['ngram_model_key_dict']['title_only'],
+                            text_source = key_dict['ngram_model_key_dict']['text_source'],
                             category_single_word = key_dict['ngram_model_key_dict']['category_single_word'], 
+                            category_embedding = key_dict['ngram_model_key_dict']['category_embedding'],
+                            no_stop_words = key_dict['df_title_category_transformed_key_dict']['no_stop_words'],
                             )
     elif prefix == 'page_emb_to_word_emb_tensor':
         path = f'{CACHE_PATH}/{fname}.pickle'
@@ -126,8 +132,11 @@ def get_from_cached_file(key_dict, **kwarg):
             page_word_stats_key_dict = key_dict['page_word_stats_key_dict']
             page_word_stats = get_from_cached_file(page_word_stats_key_dict)
             return WikiDataset.generate_page_emb_to_word_emb_tensor(path, page_word_stats, 
-                                                                title_only = page_word_stats_key_dict['ngram_model_key_dict']['title_only'], 
+                                                                text_source = page_word_stats_key_dict['ngram_model_key_dict']['text_source'], 
                                                                 category_single_word = page_word_stats_key_dict['ngram_model_key_dict']['category_single_word'], 
-                                                                title_category_trunc_len = key_dict['title_category_trunc_len'])
+                                                                title_category_trunc_len = key_dict['title_category_trunc_len'],
+                                                                category_embedding = page_word_stats_key_dict['ngram_model_key_dict']['category_embedding'],
+                                                                no_stop_words = page_word_stats_key_dict['df_title_category_transformed_key_dict']['no_stop_words'],
+                                                                )
     else:
-        raise Exception('Unknown prefix!')
+        raise Exception(f'Unknown prefix {prefix}!')

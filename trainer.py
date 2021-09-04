@@ -54,7 +54,7 @@ BASE_CONFIG = {
     'amp':False,
     'title_category_trunc_len':30,
     'dataload_only':False,
-    'title_only':False,
+    'text_source':'both',
     'normalize':False,
     'temperature':1,
     'two_tower':True,
@@ -75,6 +75,8 @@ BASE_CONFIG = {
     'in_batch_neg':False,
     'neg_sample_prob_corrected':False,
     'category_single_word':False,
+    'category_embedding':False,
+    'no_stop_words':False,
 }
 
 def config2str(cfg):
@@ -153,15 +155,15 @@ def flatten_2d_list(l):
 
 class WikiTrainer:
 
-    def __init__(self, item_embedding_dim, use_cuda, model_name, input_embedding_dim=100, batch_size=32, window_size=5, iterations=3,
+    def __init__(self, item_embedding_dim, use_cuda, model_name, input_embedding_dim=(128,), batch_size=32, window_size=5, iterations=3,
                  initial_lr=0.001, page_min_count=0, word_min_count=0, num_workers=0, collate_fn='custom', iprint=500, t=1e-3, ns_exponent=0.75, 
                  optimizer_name='adam', optimizer_kwargs=None, warm_start_model=None, lr_schedule=False, timeout=60, n_chunk=20,
                  sparse=False, test=False, save_embedding=True, save_item_embedding = True, w2v_mimic=False, num_negs=5, 
                  testset_ratio = 0.1, entity_type = 'page', amp = False, title_category_trunc_len = 30,
-                 dataload_only = False, title_only = False, normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
+                 dataload_only = False, text_source = 'both', normalize = False, temperature = 1, two_tower = False, dense_lr_ratio = 0.1,
                  relu = True, repeat = 0, clamp = True, softmax = False, kaiming_init = False, quick_eval = True, stats_column = 'both',
                  torch_seed = 0, np_seed = 0, last_layer_relu = False, layer_nodes = (512,128), in_batch_neg = False, neg_sample_prob_corrected = False,
-                 category_single_word = False,
+                 category_single_word = False, category_embedding = False, no_stop_words = False,
                  ):
 
         torch.manual_seed(torch_seed)
@@ -170,8 +172,6 @@ class WikiTrainer:
         self.w2v_mimic = w2v_mimic
         if self.w2v_mimic:
             print('Using w2v mimic files for training...', flush=True)
-
-        #page_word_stats = PageWordStats(read_path=page_word_stats_path, w2v_mimic=self.w2v_mimic, title_only = title_only, stats_column=stats_column)
 
         self.timeout = timeout
         self.test = test
@@ -189,6 +189,7 @@ class WikiTrainer:
         self.quick_eval = quick_eval
         self.in_batch_neg = in_batch_neg
         self.neg_sample_prob_corrected = neg_sample_prob_corrected
+        self.category_embedding = category_embedding
 
 
         self.create_dir_structure()
@@ -203,9 +204,10 @@ class WikiTrainer:
                               num_negs=num_negs, w2v_mimic = w2v_mimic,
                               ns_exponent=ns_exponent, page_min_count=page_min_count, word_min_count=word_min_count, 
                               entity_type=entity_type,
-                              title_category_trunc_len = title_category_trunc_len, title_only = title_only, 
+                              title_category_trunc_len = title_category_trunc_len, text_source = 'both', 
                               in_batch_neg = in_batch_neg, neg_sample_prob_corrected = neg_sample_prob_corrected,
-                              category_single_word = category_single_word,
+                              category_single_word = category_single_word, category_embedding = category_embedding,
+                              no_stop_words = no_stop_words,
                               )
         if collate_fn == 'custom':
             self.collate_fn = self.dataset.collate
@@ -217,8 +219,8 @@ class WikiTrainer:
         if self.entity_type == 'page':
             self.corpus_size = len(self.dataset.page_frequency_over_threshold)
         else:
-            self.corpus_size = len(self.dataset.word_frequency)
-        self.input_embedding_dim = input_embedding_dim
+            self.corpus_size = [len(wf) for wf in self.dataset.word_frequency]
+        self.input_embedding_dim = [input_embedding_dim for wf in self.dataset.word_frequency]
         
         self.save_item_embedding = save_item_embedding
         self.iprint = iprint
@@ -284,10 +286,11 @@ class WikiTrainer:
         os.makedirs(self.saved_embeddings_dir, exist_ok = False)
     
     def parse_batch(self, sample_batched):
-        pos_u = sample_batched[0].to(self.device)
-        pos_v = sample_batched[1].to(self.device)
+        # sample_batched[0] is a list of different kind of embeddings, e.g. separate title and category embedding
+        pos_u = [e.to(self.device) for e in sample_batched[0]]
+        pos_v = [e.to(self.device) for e in sample_batched[1]]
         if sample_batched[2] is not None:
-            neg_v = sample_batched[2].to(self.device)
+            neg_v = [e.to(self.device) for e in sample_batched[2]]
         else:
             neg_v = None
         if sample_batched[3] is not None:
@@ -367,6 +370,9 @@ class WikiTrainer:
 
         if self.amp:
             scaler = torch.cuda.amp.GradScaler()
+        
+        print(f'numpy random seed is {np.random.get_state()[1][0]}')
+        print(f'sum of torch random state is {torch.get_rng_state().sum()}')
 
         for iteration in range(self.iterations):
 
@@ -380,6 +386,7 @@ class WikiTrainer:
 
             # shuffle order of input for each epoch
             np.random.shuffle(self.file_handle_lists_train)
+            print(self.file_handle_lists_train)
             if self.num_workers > 0:
                 self.file_handle_lists_train_split = np.array_split(self.file_handle_lists_train, self.num_workers)
             else:
@@ -424,7 +431,7 @@ class WikiTrainer:
 
                 # roughly every iprint batches, running loss are flushed out 5 times
                 running_loss = running_loss * (1 - 5/iprint) + loss.item() * (5/iprint)
-                total_training_instances += sample_batched[0].shape[0]
+                total_training_instances += sample_batched[0][0].shape[0]
 
                 # running_batch_time = running_batch_time * (1 - 5/iprint) + (time_now - start_time) * (5/iprint)
                 # start_time = time_now

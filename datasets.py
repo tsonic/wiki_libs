@@ -6,17 +6,18 @@ from wiki_libs.preprocessing import (
         read_page_data, append_suffix_to_fname,
         is_colab, convert_to_colab_path
     )
-#from wiki_libs.ngram import NGRAM_MODEL_PATH_PREFIX, load_ngram_model, generate_df_title_category_transformed, transform_ngram
+from wiki_libs.ngram import get_all_words_for_embedding
 from wiki_libs.cache import get_from_cached_file
 import numpy as np
+from itertools import repeat
 
 NEGATIVE_TABLE_SIZE = 5e7
 class WikiDataset(torch.utils.data.IterableDataset):
     'Characterizes a dataset for PyTorch'
     def __init__(self, file_list, compression, n_chunk, num_negs, ns_exponent, w2v_mimic,
                 page_min_count = 0, word_min_count = 0, entity_type='page', title_category_trunc_len = 50,stats_column = 'both',
-                title_only = False, in_batch_neg = False,
-                neg_sample_prob_corrected = False, category_single_word = False,
+                text_source = 'both', in_batch_neg = False,
+                neg_sample_prob_corrected = False, category_single_word = False, category_embedding = False, no_stop_words = False,
                 ):
         'Initialization'
         #self.labels = labels
@@ -43,14 +44,19 @@ class WikiDataset(torch.utils.data.IterableDataset):
         self.num_negs = num_negs
 
         self.w2v_mimic = w2v_mimic
-        self.title_only = title_only
+        self.text_source = text_source
         self.stats_column = stats_column
         self.category_single_word = category_single_word
+
+        self.category_embedding = category_embedding
+        self.no_stop_words = no_stop_words
+
         page_word_stats = get_from_cached_file({'prefix':'page_word_stats', 
-                                                    'w2v_mimic':self.w2v_mimic, 
-                                                    'stats_column':self.stats_column,
-                                                    'ngram_model_key_dict':{'prefix':'ngram_model','title_only':self.title_only, 'category_single_word':self.category_single_word},
-                                                    })
+                                'w2v_mimic':self.w2v_mimic, 
+                                'stats_column':self.stats_column,
+                                'ngram_model_key_dict':{'prefix':'ngram_model','text_source':self.text_source, 'category_single_word':self.category_single_word, 'category_embedding':self.category_embedding},
+                                'df_title_category_transformed_key_dict':{'prefix': 'df_title_category_transformed','no_stop_words':self.no_stop_words},
+                                })
         
 
         self.title_category_trunc_len = title_category_trunc_len
@@ -65,7 +71,7 @@ class WikiDataset(torch.utils.data.IterableDataset):
             self.min_count = self.page_min_count
             # self.title_category_transformed_dict = None
         else:
-            entity_frequency = page_word_stats.word_frequency
+            # entity_frequency = page_word_stats.word_frequency
             self.min_count = self.word_min_count
 
         if self.entity_type == 'page':
@@ -75,39 +81,46 @@ class WikiDataset(torch.utils.data.IterableDataset):
 
         page_frequency_, word_frequency, emb2page, emb2word, page2emb, word2emb = WikiDataset.generate_page_word_emb_index(page_word_stats)
 
-        self.entity_frequency = {p:c for p, c in entity_frequency.items()}
+        # self.entity_frequency = {p:c for p, c in entity_frequency.items()}
         self.page_frequency = page_frequency_
         self.word_frequency = word_frequency
 
-        self.emb2entity = list(self.entity_frequency.keys())
+        # self.emb2entity = list(self.entity_frequency.keys())
         self.emb2page = emb2page
         self.emb2word = emb2word
 
-        self.entity_frequency_over_threshold = {p:c for p, c in entity_frequency.items() if c > self.min_count}
+        # self.entity_frequency_over_threshold = {p:c for p, c in entity_frequency.items() if c > self.min_count}
         self.page_frequency_over_threshold = {p:c for p, c in page_word_stats.page_frequency.items() if c > self.page_min_count}
-        self.word_frequency_over_threshold = {p:c for p, c in page_word_stats.word_frequency.items() if c > self.word_min_count}
+        self.word_frequency_over_threshold = [{p:c for p, c in wf.items() if c > self.word_min_count} for wf in page_word_stats.word_frequency]
 
         # emb2page maps pytorch embedding back to 'page_id'
-        self.emb2entity_over_threshold = list(self.entity_frequency_over_threshold.keys())
+        # self.emb2entity_over_threshold = list(self.entity_frequency_over_threshold.keys())
         self.emb2page_over_threshold = list(self.page_frequency_over_threshold.keys())
-        self.emb2word_over_threshold = list(self.word_frequency_over_threshold.keys())
+        self.emb2word_over_threshold = [list(wfot.keys()) for wfot in self.word_frequency_over_threshold]
 
 
         # page2emb is 'page_id' to pytorch embedding index mapping
-        self.entity2emb_over_threshold = {p:i for i, p in enumerate(self.emb2entity_over_threshold)}
+        # self.entity2emb_over_threshold = {p:i for i, p in enumerate(self.emb2entity_over_threshold)}
         self.page2emb_over_threshold = {p:i for i, p in enumerate(self.emb2page_over_threshold)}
-        self.word2emb_over_threshold = {p:i for i, p in enumerate(self.emb2word_over_threshold)}
+        self.word2emb_over_threshold = [{p:i for i, p in enumerate(e)} for e in self.emb2word_over_threshold]
 
-        self.entity2emb = {p:i for i, p in enumerate(self.emb2entity)}
+        # self.entity2emb = {p:i for i, p in enumerate(self.emb2entity)}
         self.page2emb = page2emb
         self.word2emb = word2emb
 
         self.cp_pages = set(read_page_data(w2v_mimic = self.w2v_mimic)['page_id'])
         
         if self.entity_type == 'word':
-            self.page_emb_to_word_emb_tensor = get_from_cached_file({'prefix':'page_emb_to_word_emb_tensor', 
-            'page_word_stats_key_dict': {'ngram_model_key_dict':{'prefix':'ngram_model','title_only':self.title_only,'category_single_word':self.category_single_word}},
+            self.page_emb_to_word_emb_tensor = get_from_cached_file({
+            'prefix':'page_emb_to_word_emb_tensor', 
+            'page_word_stats_key_dict': {
+                    'ngram_model_key_dict':{'prefix':'ngram_model','text_source':self.text_source,'category_single_word':self.category_single_word, 'category_embedding' : self.category_embedding},
+                    'w2v_mimic':self.w2v_mimic, 
+                    'stats_column':self.stats_column,
+                    'df_title_category_transformed_key_dict':{'prefix': 'df_title_category_transformed','no_stop_words':self.no_stop_words},
+                },
             'title_category_trunc_len':self.title_category_trunc_len,
+                
             })
         
         if entity_type == "page":
@@ -116,46 +129,66 @@ class WikiDataset(torch.utils.data.IterableDataset):
             page_id, i = zip(*self.page2emb.items())
         self.page2emb_series_map = pd.Series(i, index=page_id, dtype=np.int64)
 
-        print(f'Number of unique entities ({entity_type}) included is {len(self.entity_frequency_over_threshold)}')
+        # print(f'Number of unique entities ({entity_type}) included is {len(self.entity_frequency_over_threshold)}')
         print(f'Number of unique pages included is {len(self.page_frequency_over_threshold)}')
-        print(f'Number of unique words included is {len(self.word_frequency_over_threshold)}')
+        print(f'Number of unique words included is {[len(wfot) for wfot in self.word_frequency_over_threshold]}')
 
         self.initTableNegatives(ns_exponent=ns_exponent)
 
     @staticmethod
-    def generate_page_emb_to_word_emb_tensor(output_path, page_word_stats, title_only, category_single_word, title_category_trunc_len):
+    def generate_page_emb_to_word_emb_tensor(output_path, page_word_stats, text_source, category_single_word, title_category_trunc_len, category_embedding,no_stop_words):
         _, _, emb2page, emb2word, page2emb, word2emb = WikiDataset.generate_page_word_emb_index(page_word_stats)
         print('start generating page_emb_to_word_emb_tensor', flush = True)
         import time
         st = time.time()
-        page_emb_to_word_emb_tensor = torch.LongTensor(
-            get_from_cached_file({'prefix':'df_title_category_transformed',
-                                'ngram_model_key_dict':{'prefix':'ngram_model','title_only':title_only,'category_single_word':category_single_word}})
-            .set_index('page_id')
-            ['page_title_category_transformed']
-            # the last row in the embedding is padded 0 vector
-            .apply(lambda x: [word2emb[x[i]] if i < len(x) else len(emb2word) for i in range(title_category_trunc_len)])
-            .reindex(index = emb2page) #self.emb2page is a vector
-            .tolist()
-        )
+
+        if isinstance(title_category_trunc_len, int):
+            title_category_trunc_len = repeat(title_category_trunc_len)
         
+        page_emb_to_word_emb_tensor = [
+            WikiDataset.compute_page_emb_to_word_emb_tensor(
+            df_title_category_transformed,
+            word2emb = w2e, 
+            emb2word = e2w, 
+            title_category_trunc_len = trunc_len, 
+            emb2page = emb2page
+        ) for w2e, e2w, trunc_len, df_title_category_transformed 
+        in zip(word2emb, emb2word, title_category_trunc_len, 
+                get_all_words_for_embedding(text_source, category_single_word, category_embedding, no_stop_words))]
+
+
         et = time.time()
 
         print(f'Finish generating page_emb_to_word_emb_tensor, took {et - st}', flush = True)
         torch.save(page_emb_to_word_emb_tensor, output_path)
         print(f'saved page_emb_to_word_emb_tensor to "{output_path}".')
+
         return page_emb_to_word_emb_tensor
+    
+    @staticmethod
+    def compute_page_emb_to_word_emb_tensor(df_title_category_transformed, word2emb, emb2word, title_category_trunc_len, emb2page):
+        df_tensor = (
+            df_title_category_transformed
+                .set_index('page_id')
+                ['page_title_category_transformed']
+        )
+        df_tensor = df_tensor.apply(lambda x: [word2emb[x[i]] if i < len(x) else len(emb2word) for i in range(title_category_trunc_len)])
+        df_tensor = df_tensor.reindex(index = emb2page)
+        print(word2emb['anarchism'])
+        return torch.LongTensor(df_tensor.tolist())
+        
 
     @staticmethod
     def generate_page_word_emb_index(page_word_stats):
         page_frequency = {p:c for p, c in page_word_stats.page_frequency.items()}
-        word_frequency = {p:c for p, c in page_word_stats.word_frequency.items()}
+        word_frequency = [{p:c for p, c in wf.items()} for wf in page_word_stats.word_frequency]
 
-        emb2page = list(page_frequency.keys())
-        emb2word = list(word_frequency.keys())
+        # iteration using keys does not guarantee order
+        emb2page = sorted(page_frequency.keys())
+        emb2word = [sorted(wf.keys()) for wf in word_frequency]
 
         page2emb = {p:i for i, p in enumerate(emb2page)}
-        word2emb = {p:i for i, p in enumerate(emb2word)}
+        word2emb = [{p:i for i, p in enumerate(e2w)} for e2w in emb2word]
 
         return page_frequency, word_frequency, emb2page, emb2word, page2emb, word2emb
     
@@ -225,12 +258,12 @@ class WikiDataset(torch.utils.data.IterableDataset):
         return np.floor(a + np.random.rand(len(a))).astype(int)
 
     def collate(self,batches):
-        
         id_list, positive_list = zip(*batches)
         ####### input are page embedding index, instead of page id.
         pos_u = torch.LongTensor(id_list)
         pos_v = torch.LongTensor(positive_list)
         neg_v = None
+
         if not self.in_batch_neg:
             negs = self.getNegatives(None, self.num_negs * len(batches)).reshape((len(batches), self.num_negs))
             neg_v = torch.from_numpy(negs)
@@ -240,11 +273,10 @@ class WikiDataset(torch.utils.data.IterableDataset):
             pos_v_page = pos_v
             neg_v_page = neg_v
         if self.entity_type != 'page':
-            pos_u = self.page_emb_to_word_emb_tensor[pos_u]
-            pos_v = self.page_emb_to_word_emb_tensor[pos_v]
+            pos_u = [t[pos_u] for t in self.page_emb_to_word_emb_tensor]
+            pos_v = [t[pos_v] for t in self.page_emb_to_word_emb_tensor]
             if not self.in_batch_neg:
-                neg_v = self.page_emb_to_word_emb_tensor[neg_v]
-
+                neg_v = [t[neg_v] for t in self.page_emb_to_word_emb_tensor[neg_v]]
 
         return pos_u, pos_v, neg_v, pos_v_page, neg_v_page
 
